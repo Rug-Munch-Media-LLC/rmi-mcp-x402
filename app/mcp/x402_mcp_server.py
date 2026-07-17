@@ -22,7 +22,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("x402_mcp_server")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 
 # ============================================================
@@ -70,7 +72,9 @@ class AIGuardWrapper:
             self.active = True
             logger.info("✅ AI Guard loaded from RugMunch security module")
         except Exception as e:
-            logger.warning(f"⚠️ Using standalone AI Guard (external module unavailable: {e})")
+            logger.warning(
+                f"⚠️ Using standalone AI Guard (external module unavailable: {e})"
+            )
             self._guard = None
             self.active = True  # Standalone still works
 
@@ -78,7 +82,9 @@ class AIGuardWrapper:
         """Check request for security violations."""
         # Check headers
         user_agent = request.headers.get("User-Agent", "").lower()
-        if any(bot in user_agent for bot in ["sqlmap", "nikto", "nmap", "masscan", "zgrab"]):
+        if any(
+            bot in user_agent for bot in ["sqlmap", "nikto", "nmap", "masscan", "zgrab"]
+        ):
             return False, "Security scanner detected"
 
         # Check body for POST/PUT/PATCH
@@ -149,7 +155,9 @@ class MultiChainFacilitator:
     base_config = {
         "name": "RugMunch Intelligence x402 Gateway",
         "network": "BASE",
-        "wallet_address": os.environ.get("X402_BASE_WALLET", "0x1E3AC01d0fdb976179790BDD02823196A92705C9"),
+        "wallet_address": os.environ.get(
+            "X402_BASE_WALLET", "0x1E3AC01d0fdb976179790BDD02823196A92705C9"
+        ),
         "token_symbol": "ETH",
         "token_decimals": 18,
         "rpc_url": "https://mainnet.base.org",
@@ -159,7 +167,9 @@ class MultiChainFacilitator:
     solana_config = {
         "name": "RugMunch Intelligence x402 Gateway",
         "network": "SOLANA",
-        "wallet_address": os.environ.get("X402_SOLANA_WALLET", "Gix4P9AmwcZRGzr2hCEME5m2QAvY86dBfm8c7e7MpFzv"),
+        "wallet_address": os.environ.get(
+            "X402_SOLANA_WALLET", "Gix4P9AmwcZRGzr2hCEME5m2QAvY86dBfm8c7e7MpFzv"
+        ),
         "token_symbol": "USDC",
         "token_decimals": 6,
         "rpc_url": "https://api.mainnet-beta.solana.com",
@@ -196,8 +206,16 @@ class X402ToolManager:
                 description="Free system health and status endpoints",
                 category="free",
                 endpoints=[
-                    {"method": "GET", "path": "/health", "description": "System health"},
-                    {"method": "GET", "path": "/status", "description": "System status"},
+                    {
+                        "method": "GET",
+                        "path": "/health",
+                        "description": "System health",
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/status",
+                        "description": "System status",
+                    },
                     {"method": "GET", "path": "/version", "description": "API version"},
                 ],
                 price_usd=0.0,
@@ -211,9 +229,21 @@ class X402ToolManager:
                 description="Discover all available tools without payment",
                 category="free",
                 endpoints=[
-                    {"method": "GET", "path": "/.well-known/x402", "description": "x402 discovery"},
-                    {"method": "GET", "path": "/v1/bundles", "description": "List all bundles"},
-                    {"method": "GET", "path": "/v1/bundles/{id}", "description": "Bundle details"},
+                    {
+                        "method": "GET",
+                        "path": "/.well-known/x402",
+                        "description": "x402 discovery",
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/v1/bundles",
+                        "description": "List all bundles",
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/v1/bundles/{id}",
+                        "description": "Bundle details",
+                    },
                 ],
                 price_usd=0.0,
                 tier="free",
@@ -232,8 +262,16 @@ class X402ToolManager:
                         "path": "/scan/contract",
                         "description": "Smart contract scan",
                     },
-                    {"method": "POST", "path": "/scan/token", "description": "Token risk scan"},
-                    {"method": "POST", "path": "/scan/wallet", "description": "Wallet risk scan"},
+                    {
+                        "method": "POST",
+                        "path": "/scan/token",
+                        "description": "Token risk scan",
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/scan/wallet",
+                        "description": "Wallet risk scan",
+                    },
                 ],
                 price_usd=0.0,
                 tier="trial",
@@ -246,9 +284,21 @@ class X402ToolManager:
                 description="7-day trial of market intelligence tools",
                 category="trial",
                 endpoints=[
-                    {"method": "GET", "path": "/market/pulse", "description": "Token pulse"},
-                    {"method": "GET", "path": "/market/trends", "description": "Market trends"},
-                    {"method": "GET", "path": "/market/whales", "description": "Whale tracking"},
+                    {
+                        "method": "GET",
+                        "path": "/market/pulse",
+                        "description": "Token pulse",
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/market/trends",
+                        "description": "Market trends",
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/market/whales",
+                        "description": "Whale tracking",
+                    },
                 ],
                 price_usd=0.0,
                 tier="trial",
@@ -262,8 +312,16 @@ class X402ToolManager:
                 description="Real-time market momentum, volume, whale alerts",
                 category="market",
                 endpoints=[
-                    {"method": "GET", "path": "/tokens", "description": "Token listings"},
-                    {"method": "GET", "path": "/tokens/{address}", "description": "Token details"},
+                    {
+                        "method": "GET",
+                        "path": "/tokens",
+                        "description": "Token listings",
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/tokens/{address}",
+                        "description": "Token details",
+                    },
                     {
                         "method": "GET",
                         "path": "/lp/{address}",
@@ -280,7 +338,11 @@ class X402ToolManager:
                 category="security",
                 endpoints=[
                     {"method": "POST", "path": "/scan/url", "description": "URL scan"},
-                    {"method": "POST", "path": "/scan/domain", "description": "Domain analysis"},
+                    {
+                        "method": "POST",
+                        "path": "/scan/domain",
+                        "description": "Domain analysis",
+                    },
                 ],
                 price_usd=0.01,
                 tier="standard",
@@ -291,7 +353,11 @@ class X402ToolManager:
                 description="Full wallet analysis with persona detection",
                 category="wallet",
                 endpoints=[
-                    {"method": "POST", "path": "/wallet/profile", "description": "Profile wallet"},
+                    {
+                        "method": "POST",
+                        "path": "/wallet/profile",
+                        "description": "Profile wallet",
+                    },
                     {
                         "method": "POST",
                         "path": "/wallet/history",
@@ -328,9 +394,21 @@ class X402ToolManager:
                 description="Cross-chain anomaly detection with RugMunch intelligence",
                 category="security",
                 endpoints=[
-                    {"method": "POST", "path": "/scan/transfers", "description": "Scan transfers"},
-                    {"method": "GET", "path": "/scan/results", "description": "Get results"},
-                    {"method": "POST", "path": "/scan/anomaly", "description": "Anomaly detection"},
+                    {
+                        "method": "POST",
+                        "path": "/scan/transfers",
+                        "description": "Scan transfers",
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/scan/results",
+                        "description": "Get results",
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/scan/anomaly",
+                        "description": "Anomaly detection",
+                    },
                 ],
                 price_usd=0.15,
                 tier="premium",
@@ -342,8 +420,16 @@ class X402ToolManager:
                 description="Behavioral reputation engine (Arkham+Nansen+Alchemy)",
                 category="security",
                 endpoints=[
-                    {"method": "POST", "path": "/label/wallet", "description": "Label wallet"},
-                    {"method": "GET", "path": "/label/history", "description": "Label history"},
+                    {
+                        "method": "POST",
+                        "path": "/label/wallet",
+                        "description": "Label wallet",
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/label/history",
+                        "description": "Label history",
+                    },
                     {
                         "method": "POST",
                         "path": "/label/cluster",
@@ -360,9 +446,21 @@ class X402ToolManager:
                 description="Unified agent knowledge store with GCS export",
                 category="ai",
                 endpoints=[
-                    {"method": "POST", "path": "/memory/store", "description": "Store knowledge"},
-                    {"method": "GET", "path": "/memory/query", "description": "Query knowledge"},
-                    {"method": "POST", "path": "/memory/export", "description": "Export to GCS"},
+                    {
+                        "method": "POST",
+                        "path": "/memory/store",
+                        "description": "Store knowledge",
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/memory/query",
+                        "description": "Query knowledge",
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/memory/export",
+                        "description": "Export to GCS",
+                    },
                 ],
                 price_usd=0.12,
                 tier="premium",
@@ -379,7 +477,11 @@ class X402ToolManager:
                         "path": "/audit/contract",
                         "description": "Full contract audit",
                     },
-                    {"method": "POST", "path": "/audit/honeypot", "description": "Honeypot check"},
+                    {
+                        "method": "POST",
+                        "path": "/audit/honeypot",
+                        "description": "Honeypot check",
+                    },
                     {
                         "method": "POST",
                         "path": "/audit/proxy",
@@ -422,7 +524,11 @@ class X402ToolManager:
                         "path": "/whale/decode",
                         "description": "Decode whale strategy",
                     },
-                    {"method": "GET", "path": "/whale/positions", "description": "Track positions"},
+                    {
+                        "method": "GET",
+                        "path": "/whale/positions",
+                        "description": "Track positions",
+                    },
                 ],
                 price_usd=0.15,
                 tier="premium",
@@ -434,7 +540,11 @@ class X402ToolManager:
                 description="Advanced security analysis, threat detection, forensics",
                 category="security",
                 endpoints=[
-                    {"method": "POST", "path": "/security/scan", "description": "Security scan"},
+                    {
+                        "method": "POST",
+                        "path": "/security/scan",
+                        "description": "Security scan",
+                    },
                     {
                         "method": "POST",
                         "path": "/security/threats",
@@ -497,9 +607,21 @@ class X402ToolManager:
                         "path": "/mcp/eth/transaction",
                         "description": "Get transaction",
                     },
-                    {"method": "POST", "path": "/mcp/eth/call", "description": "Call contract"},
-                    {"method": "POST", "path": "/mcp/eth/logs", "description": "Get event logs"},
-                    {"method": "POST", "path": "/mcp/eth/ens", "description": "Resolve ENS"},
+                    {
+                        "method": "POST",
+                        "path": "/mcp/eth/call",
+                        "description": "Call contract",
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/mcp/eth/logs",
+                        "description": "Get event logs",
+                    },
+                    {
+                        "method": "POST",
+                        "path": "/mcp/eth/ens",
+                        "description": "Resolve ENS",
+                    },
                 ],
                 price_usd=0.08,
                 tier="premium",
@@ -554,8 +676,12 @@ class X402MCPServer:
             f"   Free: {len(b.free_bundles)} | Trial: {len(b.trial_bundles)} | Premium: {len(b.premium_bundles)}"
         )
         logger.info(f"   Endpoints: {b.total_endpoints}")
-        logger.info(f"   Revenue/call: ${sum(b.price_usd for b in b.list_bundles()):.2f}")
-        logger.info(f"   AI Guard: {'✅ Active' if self._ai_guard.active else '❌ Inactive'}")
+        logger.info(
+            f"   Revenue/call: ${sum(b.price_usd for b in b.list_bundles()):.2f}"
+        )
+        logger.info(
+            f"   AI Guard: {'✅ Active' if self._ai_guard.active else '❌ Inactive'}"
+        )
 
     def streamable_http_app(self) -> FastAPI:
         if self._app is not None:
@@ -590,15 +716,23 @@ class X402MCPServer:
                         "bundles": len(b.list_bundles()),
                         "free": len(b.free_bundles),
                         "trial": len(b.trial_bundles),
-                        "standard": len([x for x in b.list_bundles() if x.tier == "standard"]),
+                        "standard": len(
+                            [x for x in b.list_bundles() if x.tier == "standard"]
+                        ),
                         "premium": len(b.premium_bundles),
                         "endpoints": b.total_endpoints,
                     },
                     "ai_guard": self._ai_guard.active,
                     "chains": ["base", "solana"],
                     "facilitator": {
-                        "base_wallet": self._facilitator.base_config["wallet_address"][:20] + "...",
-                        "solana_wallet": self._facilitator.solana_config["wallet_address"][:20] + "...",
+                        "base_wallet": self._facilitator.base_config["wallet_address"][
+                            :20
+                        ]
+                        + "...",
+                        "solana_wallet": self._facilitator.solana_config[
+                            "wallet_address"
+                        ][:20]
+                        + "...",
                     },
                 }
             )
@@ -683,17 +817,43 @@ class X402MCPServer:
             )
 
     def _add_middleware(self, app: FastAPI):
-        """AI Guard + x402 payment middleware."""
+        """API key auth + AI Guard + x402 payment middleware."""
+
+        # Read API key from env. If not set, auth is disabled (local dev).
+        _api_key: str | None = os.environ.get("RMI_MCP_API_KEY")
 
         @app.middleware("http")
         async def security_and_payment_middleware(request: Request, call_next):
             path = request.url.path
 
-            # Skip free endpoints
+            # Skip free/public endpoints
             if any(
-                path.startswith(p) for p in ["/health", "/version", "/.well-known", "/docs", "/openapi", "/v1/bundles"]
+                path.startswith(p)
+                for p in [
+                    "/health",
+                    "/version",
+                    "/.well-known",
+                    "/docs",
+                    "/openapi",
+                    "/v1/bundles",
+                ]
             ):
                 return await call_next(request)
+
+            # ── API Key authentication ──────────────────────────
+            # Tier 2 moat: all non-public endpoints require a valid API key.
+            if _api_key:
+                req_key = request.headers.get("X-API-Key")
+                if not req_key or req_key != _api_key:
+                    return JSONResponse(
+                        {
+                            "error": "Unauthorized",
+                            "code": "MISSING_API_KEY",
+                            "message": "Valid X-API-Key header required. Set RMI_MCP_API_KEY on the server.",
+                        },
+                        status_code=401,
+                        headers={"WWW-Authenticate": "ApiKey"},
+                    )
 
             # AI Guard check
             if self._ai_guard.active:
@@ -736,15 +896,21 @@ class X402MCPServer:
                                     "price_usd": bundle.price_usd,
                                     "payment_options": {
                                         "base": self._get_payment_req(bundle, "base"),
-                                        "solana": self._get_payment_req(bundle, "solana"),
+                                        "solana": self._get_payment_req(
+                                            bundle, "solana"
+                                        ),
                                     },
                                     "instructions": "Include X-Payment (Base) or X-Solana-Payment (Solana) header with transaction proof",
                                 },
                                 status_code=402,
                                 headers={
                                     "X-Payment-Required": "true",
-                                    "X-Payment-Address-Base": self._facilitator.base_config["wallet_address"],
-                                    "X-Payment-Address-Solana": self._facilitator.solana_config["wallet_address"],
+                                    "X-Payment-Address-Base": self._facilitator.base_config[
+                                        "wallet_address"
+                                    ],
+                                    "X-Payment-Address-Solana": self._facilitator.solana_config[
+                                        "wallet_address"
+                                    ],
                                     "X-Bundle-Name": bundle.name,
                                     "X-Price-USD": str(bundle.price_usd),
                                 },
@@ -753,7 +919,11 @@ class X402MCPServer:
             return await call_next(request)
 
     def _get_payment_req(self, bundle: X402Bundle, chain: str) -> dict[str, Any]:
-        facilitator = self._facilitator.base_config if chain == "base" else self._facilitator.solana_config
+        facilitator = (
+            self._facilitator.base_config
+            if chain == "base"
+            else self._facilitator.solana_config
+        )
 
         if chain == "solana":
             amount_atomic = int(bundle.price_usd * 10**6)

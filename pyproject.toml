@@ -1,0 +1,13 @@
+[project]
+name = "rmi-mcp-x402"
+version = "5.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=2.0",
+    "httpx>=0.28",
+    "pydantic>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build-api"

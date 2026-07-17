@@ -357,6 +357,14 @@ async def verify_payment_endpoint(
     """
     Verify an x402 payment payload using the official SDK.
 
+    Supports idempotency via two mechanisms:
+      1. Optional Idempotency-Key header — caller can provide a client-generated
+         key; if the same key is seen again, the cached response is returned
+         without re-processing.
+      2. Natural key (tx_hash) — after successful verification the tx_hash is
+         stored in Redis; a subsequent call with the same on-chain tx_hash
+         returns the stored response instead of re-verifying.
+
     Uses x402ResourceServer for cryptographic verification via PayAI facilitator.
     Replaces the old hand-rolled PaymentVerifier with the SDK.
 
@@ -375,6 +383,9 @@ async def verify_payment_endpoint(
         "amount": "...",
     }
     """
+    # ── Idempotency check via header ─────────────────────────────────
+    idempotency_key = request.headers.get("Idempotency-Key") or request.headers.get("idempotency-key")
+
     try:
         body = await request.json()
         x402_payload = body.get("payload", "")
@@ -384,6 +395,23 @@ async def verify_payment_endpoint(
 
         if not x402_payload:
             raise HTTPException(status_code=400, detail="Missing x402 payload")
+
+        # If caller provided an idempotency key, check Redis before doing any work
+        if idempotency_key:
+            try:
+                from app.auth import get_redis
+
+                r = await get_redis()
+                cached = await r.get(f"x402:idempotency:{idempotency_key}")
+                if cached:
+                    logger.info(
+                        "x402_idempotent_replay",
+                        extra={"idempotency_key": idempotency_key, "source": "header"},
+                    )
+                    return json.loads(cached)
+            except Exception as e:
+                # Idempotency check failure is non-fatal — proceed without caching
+                logger.debug(f"Idempotency key lookup failed: {e}")
 
         # Parse payload (it may be a JSON string or dict)
         if isinstance(x402_payload, str):
@@ -405,28 +433,47 @@ async def verify_payment_endpoint(
         # Verify via SDK
         result = await _verifier.verify_payment(payload_dict, network=caip_network)
 
-        # Store verification result for audit trail
+        # ── Natural-key idempotency check + audit store ──────────────
         if result.get("verified"):
             try:
                 from app.auth import get_redis
 
                 r = await get_redis()
-                verify_key = f"x402:verify:{result.get('tx_hash') or str(time.time())}"
-                await r.set(
-                    verify_key,
-                    json.dumps(
-                        {
-                            "verified_at": datetime.now(UTC).isoformat(),
-                            "network": network,
-                            "tool": tool,
-                            "amount": amount,
-                            "tx_hash": result.get("tx_hash"),
-                            "payer": result.get("payer"),
-                            "result": result.get("reason"),
-                        }
-                    ),
-                    ex=7 * 86400,
+                tx_hash = result.get("tx_hash")
+
+                # If we have a tx_hash, check if it was already processed
+                # (catches duplicate webhooks where the caller didn't send Idempotency-Key)
+                if tx_hash:
+                    already = await r.get(f"x402:verify:{tx_hash}")
+                    if already:
+                        logger.info(
+                            "x402_idempotent_replay",
+                            extra={"tx_hash": tx_hash[:16], "source": "tx_hash"},
+                        )
+                        return json.loads(already)
+
+                verify_key = f"x402:verify:{tx_hash or str(time.time())}"
+                stored_payload = json.dumps(
+                    {
+                        "verified_at": datetime.now(UTC).isoformat(),
+                        "network": network,
+                        "tool": tool,
+                        "amount": amount,
+                        "tx_hash": tx_hash,
+                        "payer": result.get("payer"),
+                        "result": result.get("reason"),
+                    }
                 )
+                await r.set(verify_key, stored_payload, ex=7 * 86400)
+
+                # Also store under the caller's idempotency key for early-exit on retry
+                if idempotency_key:
+                    await r.set(
+                        f"x402:idempotency:{idempotency_key}",
+                        json.dumps(result),
+                        ex=7 * 86400,
+                    )
+
             except Exception as e:
                 logger.debug(f"Audit store failed: {e}")
 

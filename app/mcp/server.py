@@ -14,6 +14,7 @@ Tools (per v4.0):
 
 Backend implementations: app/catalog/* + app/domain/reports/generator.py
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,7 +30,23 @@ TOOL_CATALOG: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "chain": {"type": "string", "enum": ["solana", "ethereum", "base", "arbitrum", "optimism", "polygon", "bsc", "tron", "bitcoin", "avalanche", "fantom", "gnosis"]},
+                "chain": {
+                    "type": "string",
+                    "enum": [
+                        "solana",
+                        "ethereum",
+                        "base",
+                        "arbitrum",
+                        "optimism",
+                        "polygon",
+                        "bsc",
+                        "tron",
+                        "bitcoin",
+                        "avalanche",
+                        "fantom",
+                        "gnosis",
+                    ],
+                },
                 "address": {"type": "string", "description": "Token contract address"},
             },
             "required": ["chain", "address"],
@@ -65,9 +82,22 @@ TOOL_CATALOG: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "subject_id": {"type": "string", "description": "chain:address, or 'all' for general news"},
-                "since_hours": {"type": "integer", "default": 24, "minimum": 1, "maximum": 720},
-                "limit": {"type": "integer", "default": 10, "minimum": 1, "maximum": 50},
+                "subject_id": {
+                    "type": "string",
+                    "description": "chain:address, or 'all' for general news",
+                },
+                "since_hours": {
+                    "type": "integer",
+                    "default": 24,
+                    "minimum": 1,
+                    "maximum": 720,
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 50,
+                },
             },
         },
     },
@@ -125,7 +155,10 @@ TOOL_CATALOG: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "sql": {"type": "string", "description": "SQL query (SELECT only, no writes)"},
+                "sql": {
+                    "type": "string",
+                    "description": "SQL query (SELECT only, no writes)",
+                },
                 "params": {"type": "array", "items": {}, "default": []},
                 "max_rows": {"type": "integer", "default": 1000, "maximum": 10000},
             },
@@ -139,7 +172,10 @@ TOOL_CATALOG: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "include_deprecated": {"type": "boolean", "default": False},
-                "category": {"type": "string", "description": "filter by category (free, pro, enterprise, moat)"},
+                "category": {
+                    "type": "string",
+                    "description": "filter by category (free, pro, enterprise, moat)",
+                },
             },
         },
     },
@@ -158,17 +194,17 @@ TOOL_CATALOG: list[dict[str, Any]] = [
 
 # ── Tool versioning + deprecation registry ───────────────────────
 TOOL_VERSIONS: dict[str, str] = {
-    "get_token_risk":         "1.2.0",
-    "get_wallet_analysis":    "1.1.0",
+    "get_token_risk": "1.2.0",
+    "get_wallet_analysis": "1.1.0",
     "get_deployer_reputation": "2.0.0",  # M3 — Bayesian posterior
-    "get_news_sentiment":     "1.0.0",
-    "generate_report":        "2.0.0",  # M3 — RAG-grounded
-    "query_catalog":          "1.0.0",
-    "find_similar_tokens":    "1.0.0",
-    "resolve_entity":         "1.0.0",
-    "analytics_query":        "1.0.0",  # M3 moat TIER 1
-    "mcp_discover":           "1.0.0",  # M3 moat TIER 1
-    "status_check":           "1.0.0",  # M3 moat TIER 1
+    "get_news_sentiment": "1.0.0",
+    "generate_report": "2.0.0",  # M3 — RAG-grounded
+    "query_catalog": "1.0.0",
+    "find_similar_tokens": "1.0.0",
+    "resolve_entity": "1.0.0",
+    "analytics_query": "1.0.0",  # M3 moat TIER 1
+    "mcp_discover": "1.0.0",  # M3 moat TIER 1
+    "status_check": "1.0.0",  # M3 moat TIER 1
 }
 
 TOOL_DEPRECATED: set[str] = set()  # empty — no deprecated tools yet
@@ -189,6 +225,7 @@ async def call_tool(name: str, arguments: dict) -> dict:
 
     if name == "get_token_risk":
         from app.catalog.models import Chain
+
         try:
             c = Chain(arguments["chain"])
         except ValueError:
@@ -198,6 +235,7 @@ async def call_tool(name: str, arguments: dict) -> dict:
 
     if name == "get_wallet_analysis":
         from app.catalog.models import Chain
+
         try:
             c = Chain(arguments["chain"])
         except ValueError:
@@ -209,6 +247,7 @@ async def call_tool(name: str, arguments: dict) -> dict:
 
     if name == "get_deployer_reputation":
         from app.catalog.models import Chain
+
         try:
             c = Chain(arguments["chain"])
         except ValueError:
@@ -219,11 +258,17 @@ async def call_tool(name: str, arguments: dict) -> dict:
         # Compute reputation deterministically
         from app.catalog.models import Deployer
         from app.catalog.reputation import compute_deployer_reputation
+
         deployer = Deployer(
-            wallet_id=w.wallet_id, chain=w.chain, address=w.address,
-            first_seen=w.first_seen, last_seen=w.last_seen,
-            tx_count=w.tx_count, total_volume_usd=w.total_volume_usd,
-            is_deployer=True, reputation_score=w.reputation_score,
+            wallet_id=w.wallet_id,
+            chain=w.chain,
+            address=w.address,
+            first_seen=w.first_seen,
+            last_seen=w.last_seen,
+            tx_count=w.tx_count,
+            total_volume_usd=w.total_volume_usd,
+            is_deployer=True,
+            reputation_score=w.reputation_score,
             deployments=getattr(w, "deployments", []),
             rug_count=getattr(w, "rug_count", 0),
         )
@@ -243,7 +288,8 @@ async def call_tool(name: str, arguments: dict) -> dict:
                        FROM news_items
                        WHERE published_at > NOW() - ($1 || ' hours')::interval
                        ORDER BY published_at DESC LIMIT $2""",
-                    str(since), limit,
+                    str(since),
+                    limit,
                 )
             articles = [
                 {
@@ -256,18 +302,26 @@ async def call_tool(name: str, arguments: dict) -> dict:
                 }
                 for r in rows
             ]
-            avg_sent = sum(a["sentiment_score"] or 0 for a in articles) / max(1, len(articles))
-            return {"result": {
-                "subject": subject,
-                "article_count": len(articles),
-                "avg_sentiment": round(avg_sent, 3),
-                "articles": articles,
-            }}
+            avg_sent = sum(a["sentiment_score"] or 0 for a in articles) / max(
+                1, len(articles)
+            )
+            return {
+                "result": {
+                    "subject": subject,
+                    "article_count": len(articles),
+                    "avg_sentiment": round(avg_sent, 3),
+                    "articles": articles,
+                }
+            }
         except Exception as e:
             return {"error": f"news_query_fail: {e}"}
 
     if name == "generate_report":
-        from app.domain.reports.generator import generate_token_report, generate_wallet_report
+        from app.domain.reports.generator import (
+            generate_token_report,
+            generate_wallet_report,
+        )
+
         chain, address = arguments["subject_id"].split(":", 1)
         try:
             if arguments["subject_type"] == "token":
@@ -275,14 +329,17 @@ async def call_tool(name: str, arguments: dict) -> dict:
             else:
                 report = await generate_wallet_report(catalog, chain, address)
             from app.domain.reports.generator import save_report
+
             await save_report(catalog, report)
-            return {"result": {
-                "report_id": report.report_id,
-                "risk_score": report.risk_score,
-                "risk_tier": report.risk_tier.value,
-                "markdown": report.to_markdown(),
-                "paid_via_x402": None,  # MCP doesn't enforce payment in v1
-            }}
+            return {
+                "result": {
+                    "report_id": report.report_id,
+                    "risk_score": report.risk_score,
+                    "risk_tier": report.risk_tier.value,
+                    "markdown": report.to_markdown(),
+                    "paid_via_x402": None,  # MCP doesn't enforce payment in v1
+                }
+            }
         except Exception as e:
             return {"error": f"report_fail: {e}"}
 
@@ -294,6 +351,7 @@ async def call_tool(name: str, arguments: dict) -> dict:
 
     if name == "find_similar_tokens":
         from app.catalog.models import Chain
+
         try:
             c = Chain(arguments["chain"])
         except ValueError:
@@ -303,7 +361,9 @@ async def call_tool(name: str, arguments: dict) -> dict:
         if not token or not token.rag_embedding_id:
             return {"error": "token not in catalog or no RAG embedding", "similar": []}
         # Use RAG to search for similar by querying with the token's content
-        rag_hits = await catalog.rag_search(query=token.symbol or "token", top_k=int(arguments.get("limit", 10)))
+        rag_hits = await catalog.rag_search(
+            query=token.symbol or "token", top_k=int(arguments.get("limit", 10))
+        )
         return {"result": {"subject": arguments["address"], "similar": rag_hits[:10]}}
 
     if name == "resolve_entity":
@@ -313,21 +373,34 @@ async def call_tool(name: str, arguments: dict) -> dict:
     # ── TIER 1 moat tools (June 23 2026) ─────────────────────────
     if name == "analytics_query":
         # T13: Run read-only SQL via embedded DuckDB
-        # TODO: M3 moat TIER 2 — add API key check before opening to public
+        # M3 moat TIER 2 — API key check enforced in x402_mcp_server.py middleware
         from app.core.duckdb_analytics import DuckDBAnalytics
+
         sql = arguments.get("sql", "").strip()
         if not sql:
             return {"error": "sql parameter required"}
         # Safety: only allow SELECT / WITH statements, no writes
         sql_upper = sql.upper().lstrip()
-        if not (sql_upper.startswith("SELECT") or sql_upper.startswith("WITH") or sql_upper.startswith("SHOW") or sql_upper.startswith("DESCRIBE")):
-            return {"error": "only SELECT/WITH/SHOW/DESCRIBE queries are allowed"}
+        if not (
+            sql_upper.startswith("SELECT")
+            or sql_upper.startswith("WITH")
+            or sql_upper.startswith("SHOW")
+            or sql_upper.startswith("DESCRIBE")
+        ):
+            raise ValueError("only SELECT/WITH/SHOW/DESCRIBE queries are allowed")
         max_rows = min(int(arguments.get("max_rows", 1000)), 10000)
         params = arguments.get("params", [])
         try:
             d = DuckDBAnalytics()
             rows = d.query(sql, params=params, max_rows=max_rows)
-            return {"result": {"rows": rows, "count": len(rows), "truncated": len(rows) >= max_rows}, "engine": "duckdb"}
+            return {
+                "result": {
+                    "rows": rows,
+                    "count": len(rows),
+                    "truncated": len(rows) >= max_rows,
+                },
+                "engine": "duckdb",
+            }
         except Exception as exc:
             return {"error": f"duckdb query failed: {exc}"}
 
@@ -366,6 +439,7 @@ async def call_tool(name: str, arguments: dict) -> dict:
         # M3 moat TIER 1 — unified health check across all subsystems
         # Use the async path directly (we're in an event loop already)
         from app.core.health import run_health_checks
+
         health = await run_health_checks()
         return {"result": health}
 
