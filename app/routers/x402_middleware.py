@@ -199,7 +199,9 @@ async def payment_ledger(
 
             # Anonymize customer
             customer = receipt.get("customer_address", "")
-            anon_customer = customer[:6] + "..." + customer[-4:] if len(customer) > 10 else None
+            anon_customer = (
+                customer[:6] + "..." + customer[-4:] if len(customer) > 10 else None
+            )
 
             ledger.append(
                 {
@@ -384,7 +386,9 @@ async def verify_payment_endpoint(
     }
     """
     # ── Idempotency check via header ─────────────────────────────────
-    idempotency_key = request.headers.get("Idempotency-Key") or request.headers.get("idempotency-key")
+    idempotency_key = request.headers.get("Idempotency-Key") or request.headers.get(
+        "idempotency-key"
+    )
 
     try:
         body = await request.json()
@@ -605,24 +609,31 @@ async def store_receipt(request: Request):
                 "message": "Receipt stored successfully",
             }
         else:
-            # Redis unavailable — still return success so Worker doesn't retry endlessly
+            # Redis unavailable — the receipt cannot be persisted.
+            # Return 503 so the Worker can retry with backoff.
             logger.warning(f"Redis unavailable, receipt not stored: {receipt_id}")
-            return {
-                "ok": True,
-                "receipt_id": receipt_id,
-                "stored": False,
-                "message": "Receipt received but Redis unavailable",
-            }
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "storage_unavailable",
+                    "receipt_id": receipt_id,
+                    "stored": False,
+                    "message": "Receipt storage unavailable — Redis is down",
+                },
+            )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Receipt store error: {e}")
-        # Return 200 so Worker doesn't retry — receipt storage is best-effort
-        return {
-            "ok": True,
-            "stored": False,
-            "error": str(e)[:200],
-            "message": "Receipt received but storage failed",
-        }
+        # Return 500 so the Worker can retry instead of silently dropping.
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "receipt_storage_failed",
+                "message": str(e)[:200],
+            },
+        )
 
 
 # ── Fallback System Status ────────────────────────────────────
