@@ -1,6 +1,5 @@
 # Python .gitignore — Rug Munch Media fleet standard
 # See https://git.rugmunch.io/RugMunchMedia/standards for source of truth.
-
 # ── Secrets (zero tolerance) ───────────────────────────────────
 .env
 .env.*
@@ -16,7 +15,6 @@ id_ed25519
 credentials.json
 service-account.json
 .secrets/
-
 # ── Python ─────────────────────────────────────────────────────
 __pycache__/
 *.pyc
@@ -32,7 +30,6 @@ build/
 htmlcov/
 .coverage
 .coverage.*
-
 # ── IDE ────────────────────────────────────────────────────────
 .vscode/
 .idea/
@@ -40,13 +37,19 @@ htmlcov/
 *.swo
 *~
 .DS_Store
-
 # ── Logs ───────────────────────────────────────────────────────
 *.log
 logs/
-
 # ── Cache / temp ───────────────────────────────────────────────
 .cache/
 tmp/
 *.tmp__pycache__/
 *.pyc
+# Missing common patterns (added by fleet standardization)
+.turbo/
+node_modules/
+.next/
+.nuxt/
+coverage/
+Thumbs.db
+
