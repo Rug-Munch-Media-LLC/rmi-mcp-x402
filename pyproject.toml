@@ -8,6 +8,18 @@ dependencies = [
     "pydantic>=2.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "pytest>=8.3.0",
+    "vulture>=2.16",
+    "radon>=6.0",
+    "interrogate>=1.7",
+    "deptry>=0.25",
+    "pip-audit>=2.10",
+]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
