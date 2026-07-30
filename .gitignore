@@ -12,6 +12,7 @@
 id_rsa
 id_ed25519
 *.session
+*.token
 credentials.json
 service-account.json
 .secrets/
