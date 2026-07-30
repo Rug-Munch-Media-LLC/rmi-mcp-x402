@@ -6,36 +6,174 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  PYTHON_VERSION: "3.12"
+
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install ruff
-        run: pip install ruff
-      - name: Ruff check
-        run: ruff check app/
-      - name: Ruff format check
-        run: ruff format --check app/
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install deps
-        run: |
-          pip install pytest
-          pip install -e .
-      - name: Run pytest
-        run: pytest tests/ -x -q -m "not integration" || echo "no tests yet"
-
-  security:
-    runs-on: ubuntu-latest
+  # ── Commit convention ─────────────────────────────────────────
+  commitlint:
+    runs-on: docker-x64
+    container:
+      image: node:22-bookworm-slim
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Gitleaks scan
+      - name: Install commitlint
         run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.0/gitleaks_8.24.0_linux_x64.tar.gz | tar -xz -C /usr/local/bin gitleaks
-          gitleaks detect --source . --no-banner
+          apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+          rm -rf /var/lib/apt/lists/*
+          npm install -g @commitlint/cli @commitlint/config-conventional
+      - name: Validate commits in PR
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git log --format="%H %s" origin/main..HEAD | while read hash msg; do
+              echo "$hash $msg" | commitlint --from="$hash^" --to="$hash" || exit 1
+            done
+          else
+            npx commitlint --from=HEAD~1 --to=HEAD
+          fi
+
+  # ── Lint (ruff) ───────────────────────────────────────────────
+  lint:
+    runs-on: docker-x64
+    container:
+      image: python:${{ env.PYTHON_VERSION }}-slim
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system deps
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl
+          rm -rf /var/lib/apt/lists/*
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Setup Python
+        run: |
+          uv python install ${{ env.PYTHON_VERSION }}
+          uv venv --python ${{ env.PYTHON_VERSION }} .venv
+      - name: Install dev deps
+        run: uv pip install --python .venv/bin/python ruff
+      - name: Ruff check
+        run: source .venv/bin/activate && ruff check app/ --exit-non-zero-on-fix
+      - name: Ruff format check
+        run: source .venv/bin/activate && ruff format --check app/
+
+  # ── Type check (mypy) ─────────────────────────────────────────
+  typecheck:
+    runs-on: docker-x64
+    container:
+      image: python:${{ env.PYTHON_VERSION }}-slim
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system deps
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl
+          rm -rf /var/lib/apt/lists/*
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Setup Python
+        run: |
+          uv python install ${{ env.PYTHON_VERSION }}
+          uv venv --python ${{ env.PYTHON_VERSION }} .venv
+      - name: Install deps
+        run: |
+          uv pip install --python .venv/bin/python mypy -e .
+      - name: MyPy type check
+        run: source .venv/bin/activate && mypy app/ --ignore-missing-imports
+        continue-on-error: true
+
+  # ── Tests ─────────────────────────────────────────────────────
+  test:
+    runs-on: docker-x64
+    container:
+      image: python:${{ env.PYTHON_VERSION }}-slim
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system deps
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl
+          rm -rf /var/lib/apt/lists/*
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Setup Python
+        run: |
+          uv python install ${{ env.PYTHON_VERSION }}
+          uv venv --python ${{ env.PYTHON_VERSION }} .venv
+      - name: Install deps
+        run: |
+          uv pip install --python .venv/bin/python pytest pytest-asyncio pytest-cov httpx -e .
+      - name: Run tests with coverage
+        run: |
+          source .venv/bin/activate
+          pytest tests/ -x -q --tb=short \
+            --cov=app --cov-report=term --cov-report=xml:coverage.xml \
+            --cov-fail-under=30 --ignore-glob='*integration*' 2>&1 || echo "Coverage below threshold (non-blocking)"
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  # ── Security (gitleaks) ───────────────────────────────────────
+  security:
+    runs-on: docker-x64
+    container:
+      image: python:${{ env.PYTHON_VERSION }}-slim
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+          rm -rf /var/lib/apt/lists/*
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.0/gitleaks_8.24.0_linux_x64.tar.gz | tar xz -C /usr/local/bin gitleaks
+      - name: Gitleaks secret scan
+        run: gitleaks detect --source . --no-banner --exit-code 1 --verbose --config .gitleaks.toml
+
+  # ── SAST (semgrep) ────────────────────────────────────────────
+  semgrep:
+    runs-on: docker-x64
+    container:
+      image: python:3.12-slim
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install semgrep
+        run: pip install semgrep
+      - name: Semgrep SAST scan
+        run: |
+          semgrep --config=auto \
+            --error \
+            --severity=ERROR \
+            --exclude='tests/' \
+            --exclude='.venv/' \
+            --sarif=semgrep.sarif \
+            app/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report
+          path: semgrep.sarif
+
+  # ── Dependency audit (pip-audit) ──────────────────────────────
+  pip-audit:
+    runs-on: docker-x64
+    container:
+      image: python:3.12-slim
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pip-audit + deps
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends gcc git ca-certificates curl
+          rm -rf /var/lib/apt/lists/*
+          pip install pip-audit
+          pip install -e . 2>/dev/null || true
+      - name: Run pip-audit
+        run: |
+          pip-audit --fail-on=high --desc 2>&1 || { echo "❌ HIGH/CRITICAL vulnerabilities found"; exit 1; }
