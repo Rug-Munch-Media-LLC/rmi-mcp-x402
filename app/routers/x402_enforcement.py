@@ -327,9 +327,9 @@ def _load_tool_prices():
     gateway_base = None
     for candidate in [
         "/app/x402-gateway",
-        "/root/backend/x402-gateway",
+        "x402-gateway"  # [INTERNAL],
         "/srv/rmi/backend/x402-gateway",
-        "/root/.openclaw/backend/x402-gateway",
+        "x402-gateway"  # [INTERNAL],
     ]:
         if os.path.isdir(candidate):
             gateway_base = candidate

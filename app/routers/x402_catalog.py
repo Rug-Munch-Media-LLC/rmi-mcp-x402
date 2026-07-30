@@ -414,7 +414,7 @@ def get_catalog():
         "/app/x402-gateway",
         os.path.join(base_dir, "x402-gateway"),
         os.path.join(os.path.dirname(base_dir), "x402-gateway"),
-        "/root/backend/x402-gateway",
+        "x402-gateway"  # [INTERNAL],
     ]
     gateway_base = None
     for c in candidates:
