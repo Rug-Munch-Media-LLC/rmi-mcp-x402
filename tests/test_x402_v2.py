@@ -39,14 +39,14 @@ def test_v2_accepts_entry_field_names() -> None:
 
 def test_v2_asset_uses_contract_address_where_available() -> None:
     body = build_payment_required_v2("op", resource_url=URL)
-    by_net = {(o["network"], o["extra"]["name"].upper()): o for o in body["accepts"]}
-    base_usdc = by_net[("eip155:8453", "USDC")]
-    assert base_usdc["asset"] == "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".lower() or base_usdc[
-        "asset"
-    ].startswith("0x")
-    tron_usdt = by_net.get(("tron:mainnet", "USDT"))
+    by_key = {(o["network"], o["extra"]["name"].upper()): o for o in body["accepts"]}
+    base_usdc = by_key[("eip155:8453", "BASE USDC")]
+    assert base_usdc["asset"].startswith("0x")  # contract address, per spec
+    tron_usdt = by_key.get(("tron:mainnet", "TRON USDT"))
     if tron_usdt:
         assert tron_usdt["asset"] == "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+    native = by_key[("eip155:8453", "BASE ETH")]
+    assert native["asset"] == "ETH"  # no contract -> honest symbol fallback
 
 
 def test_v1_builder_unchanged() -> None:
