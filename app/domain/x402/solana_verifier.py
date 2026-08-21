@@ -1,7 +1,20 @@
-"""x402 — Solana SPL USDC payment verifier.
+"""x402 — Solana SPL stablecoin payment verifier (USDC / USDT).
 
 Mirror of ``/srv/work/repos/x402-py/x402/solana_verifier.py`` (MIT, Rug Munch
-Media LLC). Verifies a Solana USDC payment on-chain by querying the Solana RPC
+Media LLC), extended for production completeness:
+
+- SPL ``transferChecked`` destinations are TOKEN ACCOUNTS (associated token
+  accounts), not wallet addresses. Comparing ``info.destination`` against the
+  merchant wallet alone would reject every genuine payment, so the merchant's
+  token accounts are resolved from ``meta.pre/postTokenBalances`` (which carry
+  the account ``owner``) and accepted as destinations too.
+- Explicit ``commitment`` on ``getTransaction`` (default ``confirmed``) — the
+  node default is not relied upon.
+- Ordered RPC fallback for transport-level failures. An authoritative JSON-RPC
+  answer (including ``error`` / null ``result``) is final and never retried
+  against another RPC.
+
+Verifies a Solana SPL payment on-chain by querying the Solana RPC
 ``getTransaction`` with ``encoding: "jsonParsed"`` and walking the parsed
 ``splToken`` ``transferChecked`` instructions — httpx + stdlib only, no Solana
 SDK. The verifier NEVER raises; every failure returns a stable dict.
@@ -10,6 +23,7 @@ SDK. The verifier NEVER raises; every failure returns a stable dict.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,13 +31,27 @@ import httpx
 
 log = logging.getLogger(__name__)
 
-# Solana mainnet USDC mint (Circle).
+# Solana mainnet USDC mint (Circle) and USDT mint (Tether). Public constants.
 SOLANA_USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+SOLANA_USDT_MINT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+
+#: Supported SPL assets -> mint (both 6-decimals stablecoins; the decimals are
+#: still read from the transaction itself, never assumed).
+SPL_ASSET_MINTS: dict[str, str] = {
+    "USDC": SOLANA_USDC_MINT,
+    "USDT": SOLANA_USDT_MINT,
+}
 
 # Default public Solana mainnet RPC (override per call / env in production).
 DEFAULT_SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
 
 SOLANA_RPC_TIMEOUT_SECONDS = 15.0
+
+# Explicit commitment for getTransaction. "confirmed" = supermajority stake
+# voted — the standard acceptance level for payments. [REVIEW] Use "finalized"
+# for high-value payments where slower acceptance is tolerable: with
+# "confirmed" a rare fork rollback cannot be ruled out entirely.
+SOLANA_RPC_COMMITMENT = "confirmed"
 
 # SPL Token program id — sanity-check the parsed instruction came from the
 # canonical token program, not a custom program with a spoofed "parsed".
@@ -96,6 +124,56 @@ def _iter_spl_instructions(result: dict[str, Any]) -> list[tuple[str, dict[str, 
     return found
 
 
+def _balance_address(entry: dict[str, Any], account_keys: list[Any]) -> str:
+    """Resolve the token-account address of a (pre/post)TokenBalances entry."""
+    address = entry.get("address")
+    if isinstance(address, str) and address:
+        return address
+    # Legacy shape: no ``address`` field, only ``accountIndex`` into
+    # ``message.accountKeys`` (dict entries on jsonParsed, or bare strings).
+    index = entry.get("accountIndex")
+    if isinstance(index, int) and 0 <= index < len(account_keys):
+        key = account_keys[index]
+        if isinstance(key, dict):
+            pubkey = key.get("pubkey")
+            return pubkey if isinstance(pubkey, str) else ""
+        if isinstance(key, str):
+            return key
+    return ""
+
+
+def _owner_token_accounts(result: dict[str, Any], owner: str) -> dict[str, set[str]]:
+    """Map ``mint -> {token-account addresses}`` owned by ``owner``.
+
+    Built from ``meta.preTokenBalances`` + ``meta.postTokenBalances`` (each
+    entry carries ``owner``, ``mint`` and the account address), covering both
+    pre-existing accounts and accounts created by the transaction itself.
+    """
+    accounts: dict[str, set[str]] = {}
+    if not owner:
+        return accounts
+    meta = result.get("meta")
+    if not isinstance(meta, dict):
+        return accounts
+    message = result.get("transaction", {}).get("message", {})
+    account_keys = message.get("accountKeys") or []
+    if not isinstance(account_keys, list):
+        account_keys = []
+    for key in ("preTokenBalances", "postTokenBalances"):
+        entries = meta.get(key)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict) or entry.get("owner") != owner:
+                continue
+            mint = entry.get("mint")
+            address = _balance_address(entry, account_keys)
+            if not isinstance(mint, str) or not mint or not address:
+                continue
+            accounts.setdefault(mint, set()).add(address)
+    return accounts
+
+
 def _amount_usd_value(amount_atomic: int, decimals: int, usdc_price_usd: float) -> float:
     if decimals < 0:
         decimals = 0
@@ -128,6 +206,7 @@ def _success(
     mint: str,
     confirmed_at: str,
     slot: int | None,
+    payer: str = "",
     reason: str = "",
 ) -> dict[str, Any]:
     return {
@@ -140,6 +219,7 @@ def _success(
         "confirmed_at": confirmed_at,
         "reason": reason,
         "slot": slot,
+        "payer": payer,
     }
 
 
@@ -153,20 +233,60 @@ def _confirmed_at(result: dict[str, Any]) -> str:
         return ""
 
 
+async def _post_rpc(
+    url: str, payload: dict[str, Any]
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """POST one JSON-RPC request to ``url``.
+
+    Returns ``(data, None)`` when the RPC produced an authoritative JSON
+    envelope — including JSON-RPC ``error`` and null ``result`` answers: the
+    chain's answer must not be overridden by a second RPC. Returns
+    ``(None, failure)`` for transport-level failures (HTTP error, connection
+    error, invalid JSON, non-object body) that justify trying a fallback RPC.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=SOLANA_RPC_TIMEOUT_SECONDS) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+    except httpx.HTTPStatusError as e:
+        log.warning("x402_solana_rpc_http_error", extra={"status": e.response.status_code})
+        return None, _failure(f"rpc_http_error: {e.response.status_code}")
+    except httpx.RequestError as e:
+        log.warning("x402_solana_rpc_error", extra={"error": str(e)})
+        return None, _failure(f"rpc_error: {e}")
+    except ValueError as e:
+        log.warning("x402_solana_rpc_invalid_json", extra={"error": str(e)})
+        return None, _failure(f"rpc_invalid_json: {e}")
+    if not isinstance(data, dict):
+        return None, _failure("rpc_malformed_response")
+    return data, None
+
+
 async def verify_solana_payment(
     tx_signature: str,
     expected_recipient: str,
     amount_usd: float,
     *,
     rpc_url: str = DEFAULT_SOLANA_RPC_URL,
+    fallback_rpc_urls: Sequence[str] = (),
+    expected_mint: str = SOLANA_USDC_MINT,
+    commitment: str = SOLANA_RPC_COMMITMENT,
     usdc_price_usd: float = 1.0,
 ) -> dict[str, Any]:
-    """Verify a Solana USDC x402 payment on-chain.
+    """Verify a Solana SPL (USDC by default) x402 payment on-chain.
 
-    Queries ``getTransaction`` (jsonParsed) and looks for a parsed ``splToken``
-    ``transferChecked`` where ``info.mint`` is Solana USDC, ``info.destination``
-    is ``expected_recipient``, and the atomic amount >= the required amount.
-    Confirms the tx succeeded (``meta.err is None``) and is confirmed (slot).
+    Queries ``getTransaction`` (jsonParsed, explicit ``commitment``) and looks
+    for a parsed ``splToken`` ``transferChecked`` where ``info.mint`` is
+    ``expected_mint``, ``info.destination`` is ``expected_recipient`` itself OR
+    a token account owned by ``expected_recipient`` (the normal case — SPL
+    destinations are associated token accounts, not wallets), and the atomic
+    amount >= the required amount. Confirms the tx succeeded
+    (``meta.err is None``) and is confirmed (``slot`` present).
+
+    Transport-level RPC failures fall through ``fallback_rpc_urls`` in order;
+    an authoritative JSON-RPC answer from any RPC is final. Never raises —
+    every failure returns a stable ``{"verified": False, "reason": ...}`` dict.
     """
     if not tx_signature:
         return _failure("missing tx signature")
@@ -174,30 +294,32 @@ async def verify_solana_payment(
         return _failure("missing expected recipient")
     if amount_usd is None or amount_usd < 0:
         return _failure("invalid (negative) required amount")
+    if not expected_mint:
+        return _failure("missing expected mint")
 
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "getTransaction",
-        "params": [tx_signature, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}],
+        "params": [
+            tx_signature,
+            {
+                "encoding": "jsonParsed",
+                "maxSupportedTransactionVersion": 0,
+                "commitment": commitment,
+            },
+        ],
     }
-    try:
-        async with httpx.AsyncClient(timeout=SOLANA_RPC_TIMEOUT_SECONDS) as client:
-            response = await client.post(rpc_url, json=payload)
-            response.raise_for_status()
-            data = response.json()
-    except httpx.HTTPStatusError as e:
-        log.warning("x402_solana_rpc_http_error", extra={"status": e.response.status_code})
-        return _failure(f"rpc_http_error: {e.response.status_code}")
-    except httpx.RequestError as e:
-        log.warning("x402_solana_rpc_error", extra={"error": str(e)})
-        return _failure(f"rpc_error: {e}")
-    except ValueError as e:
-        log.warning("x402_solana_rpc_invalid_json", extra={"error": str(e)})
-        return _failure(f"rpc_invalid_json: {e}")
 
-    if not isinstance(data, dict):
-        return _failure("rpc_malformed_response")
+    rpc_urls = [rpc_url, *(u for u in fallback_rpc_urls if u and u != rpc_url)]
+    data: dict[str, Any] | None = None
+    last_failure: dict[str, Any] | None = None
+    for url in rpc_urls:
+        data, last_failure = await _post_rpc(url, payload)
+        if data is not None:
+            break
+    if data is None:
+        return last_failure or _failure("rpc_error: no RPC endpoints available")
 
     rpc_error = data.get("error")
     if rpc_error is not None:
@@ -228,53 +350,64 @@ async def verify_solana_payment(
     instructions = _iter_spl_instructions(result)
     if not instructions:
         return _failure(
-            "no_usdc_transfer_found: no parsed splToken transferChecked instruction", slot=slot
+            "no_spl_transfer_found: no parsed splToken transferChecked instruction", slot=slot
         )
 
-    usdc_to_recipient: list[tuple[int, int]] = []
+    # Token accounts owned by the recipient: a transferChecked ``destination``
+    # is normally the recipient's associated token account, not the wallet.
+    owner_accounts = _owner_token_accounts(result, expected_recipient)
+    mint_accounts = owner_accounts.get(expected_mint, set())
+    all_owner_accounts = set().union(*owner_accounts.values()) if owner_accounts else set()
+
+    matches: list[tuple[int, int, str]] = []  # (amount_atomic, decimals, authority)
     mint_mismatch = False
     recipient_mismatch_dest: str | None = None
     for _inst_type, info in instructions:
         mint = info.get("mint")
         destination = info.get("destination")
         parsed = _parse_amount(info)
-        if parsed is None:
+        if parsed is None or not isinstance(destination, str) or not destination:
             continue
         amount_atomic, decimals = parsed
-        if mint == SOLANA_USDC_MINT and destination == expected_recipient:
-            usdc_to_recipient.append((amount_atomic, decimals))
-        elif mint != SOLANA_USDC_MINT and destination == expected_recipient:
+        to_expected = destination == expected_recipient or destination in mint_accounts
+        if mint == expected_mint and to_expected:
+            authority = info.get("authority")
+            matches.append((amount_atomic, decimals, str(authority) if authority else ""))
+        elif mint != expected_mint and (to_expected or destination in all_owner_accounts):
             mint_mismatch = True
-        elif mint == SOLANA_USDC_MINT and destination != expected_recipient:
+        elif mint == expected_mint and not to_expected:
             recipient_mismatch_dest = destination
 
-    if not usdc_to_recipient:
+    if not matches:
         if mint_mismatch:
             return _failure(
-                "wrong_mint: transfer destination matches but mint is not Solana USDC", slot=slot
+                f"wrong_mint: transfer destination belongs to recipient "
+                f"but mint is not {expected_mint}",
+                slot=slot,
             )
         if recipient_mismatch_dest:
             return _failure(
-                f"wrong_recipient: USDC transfer to {recipient_mismatch_dest}, "
-                f"expected {expected_recipient}",
+                f"wrong_recipient: SPL transfer to {recipient_mismatch_dest}, "
+                f"expected {expected_recipient} (or one of its token accounts)",
                 slot=slot,
             )
         return _failure(
-            "no_usdc_transfer_found: no Solana USDC transferChecked to recipient", slot=slot
+            f"no_payment_found: no {expected_mint} transferChecked to recipient", slot=slot
         )
 
-    paid_atomic, decimals = max(usdc_to_recipient, key=lambda pair: pair[0])
+    # Prefer the largest matching transfer (one x402 payment = one transfer).
+    paid_atomic, decimals, payer = max(matches, key=lambda item: item[0])
     denom = 10**decimals if decimals >= 0 else 1
     paid_usd = paid_atomic / denom if denom else float(paid_atomic)
     required_usd = amount_usd / usdc_price_usd if usdc_price_usd > 0 else float(amount_usd)
     if paid_usd + 1e-9 < required_usd:
         return _failure(
-            f"underpayment: tx paid {paid_usd:.6f} USDC < required {required_usd:.6f} USDC",
+            f"underpayment: tx paid {paid_usd:.6f} < required {required_usd:.6f}",
             recipient=expected_recipient,
             amount_raw=paid_atomic,
             amount_decimals=decimals,
             amount_usd=_amount_usd_value(paid_atomic, decimals, usdc_price_usd),
-            mint=SOLANA_USDC_MINT,
+            mint=expected_mint,
             confirmed_at=_confirmed_at(result),
             slot=slot,
         )
@@ -284,7 +417,8 @@ async def verify_solana_payment(
         amount_raw=paid_atomic,
         amount_decimals=decimals,
         amount_usd=_amount_usd_value(paid_atomic, decimals, usdc_price_usd),
-        mint=SOLANA_USDC_MINT,
+        mint=expected_mint,
         confirmed_at=_confirmed_at(result),
         slot=slot,
+        payer=payer,
     )

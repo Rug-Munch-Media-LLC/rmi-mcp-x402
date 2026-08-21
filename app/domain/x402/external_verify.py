@@ -16,11 +16,16 @@ from .pricing import asset_to_atomic, network_family, normalize_network_id
 from .replay import REPLAY_HTTP_STATUS
 from .solana_verifier import (
     DEFAULT_SOLANA_RPC_URL,
+    SPL_ASSET_MINTS,
     verify_solana_payment,
 )
 
+# Comma-separated fallback Solana RPCs tried in order on transport failures.
+SOLANA_RPC_FALLBACKS_ENV = "X402_SOLANA_RPC_FALLBACKS"
 
-async def verify_external(self,
+
+async def verify_external(
+    self,
     payment_id: str,
     tx_hash: str,
     network: str,
@@ -88,13 +93,15 @@ async def verify_external(self,
             return eip
         last_error = eip.get("reason", last_error)
     elif network_family(network_id) == "solana":
-        res = await self._verify_solana(payment_id, tx_hash, network_id, asset, amount_usd)
+        # NOTE: module-level verify_solana, not a router method — the router
+        # carries no _verify_solana (it only exists on the vendored reference
+        # class), so self._verify_solana here would raise AttributeError.
+        res = await verify_solana(payment_id, tx_hash, network_id, asset, amount_usd)
         if res.get("verified"):
             await self._enforce_replay(tx_hash, network_id)
         return res
 
     return {"verified": False, "reason": last_error, "settlement": None, "network": network_id}
-
 
 
 def normalize_settlement(
@@ -126,12 +133,9 @@ def normalize_settlement(
         "amount_paid": data.get("amountPaid", data.get("amount_paid", "")),
         "reason": ""
         if success
-        else (
-            data.get("error", data.get("reason", "facilitator returned no settlement signal"))
-        ),
+        else (data.get("error", data.get("reason", "facilitator returned no settlement signal"))),
         "receipt": data,
     }
-
 
 
 async def verify_solana(
@@ -150,7 +154,10 @@ async def verify_solana(
             "scaffolded": True,
             "network": network_id,
         }
-    if asset != "USDC":
+    # SPL-verifiable assets: USDC + USDT (mint table in solana_verifier). A
+    # symbol outside the table cannot be attributed to a mint on-chain.
+    mint = SPL_ASSET_MINTS.get(str(asset).upper())
+    if mint is None:
         return {
             "verified": False,
             "reason": f"asset {asset!r} not SPL-verifiable",
@@ -166,14 +173,26 @@ async def verify_solana(
             "network": network_id,
         }
     rpc = os.getenv("X402_SOLANA_RPC", DEFAULT_SOLANA_RPC_URL)
-    result = await verify_solana_payment(tx_hash, recipient, amount_usd, rpc_url=rpc)
+    fallbacks = [
+        part.strip() for part in os.getenv(SOLANA_RPC_FALLBACKS_ENV, "").split(",") if part.strip()
+    ]
+    result = await verify_solana_payment(
+        tx_hash,
+        recipient,
+        amount_usd,
+        rpc_url=rpc,
+        fallback_rpc_urls=fallbacks,
+        expected_mint=mint,
+    )
     return {
         "verified": bool(result.get("verified")),
         "reason": result.get("reason", ""),
         "settlement": None,
         "network": network_id,
         "facilitator": "solana-rpc",
-        "signer": result.get("recipient") or recipient,
+        # ``payer`` is the transferChecked authority (the actual payer); the
+        # recipient wallet is only a fallback for legacy responses.
+        "signer": result.get("payer") or result.get("recipient") or recipient,
         "amount_atomic": result.get("amount_raw"),
         "asset": asset,
         "mint": result.get("mint"),
