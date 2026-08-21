@@ -6,6 +6,9 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+# Production MUST set X402_PAY_TO / X402_WALLET. The default below is a
+# legacy placeholder kept for backward-compat with existing tests; create_app()
+# fails closed if the wallet is still this sentinel.
 PAY_TO = os.getenv("X402_PAY_TO", "0x1E3AC01d0fdb976179790BDD02823196A92705C9").lower()
 X402_TIMEOUT_SECONDS = float(os.getenv("X402_TIMEOUT_SECONDS", "15"))
 X402_WALLET = os.getenv("X402_WALLET", PAY_TO)
@@ -22,6 +25,7 @@ X402_SELF_FACILITATE = os.getenv("X402_SELF_FACILITATE", "1").lower() in ("1", "
 X402_SELF_FACILITATOR_KEY = os.getenv("X402_SELF_FACILITATOR_KEY", "")
 X402_SELF_FACILITATOR_RPC = os.getenv("X402_SELF_FACILITATOR_RPC", "")
 X402_OFFLINE_MODE = os.getenv("X402_OFFLINE_MODE", "0").lower() in ("1", "true")
+
 
 @dataclass
 class FacilitatorConfig:

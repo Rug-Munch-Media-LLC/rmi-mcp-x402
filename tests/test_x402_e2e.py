@@ -227,7 +227,8 @@ async def test_overpayment_accepted(e2e: X402E2EHarness) -> None:
 # ── §5.3 / §6 — scaffolded TRON + honest health ─────────────────────────────
 
 
-async def test_tron_scaffolded_never_verified(e2e: X402E2EHarness) -> None:
+async def test_tron_live_verifier_rejects_fake_tx(e2e: X402E2EHarness) -> None:
+    """TRON is now live — a fake tx_hash is rejected by the TRON RPC verifier."""
     async with e2e.caller(SENDER_IP) as client:
         r = await _pay(
             e2e,
@@ -238,8 +239,9 @@ async def test_tron_scaffolded_never_verified(e2e: X402E2EHarness) -> None:
             network=SCAFFOLDED_NETWORK,
             asset="USDT",
         )
+    # TRON is live but the fake tx_hash won't be found on-chain → rejected.
     assert r.status_code == 402
-    assert "needs_facilitator" in r.json().get("error", "")
+    assert r.json().get("verified") is False or "error" in r.json()
 
 
 async def test_health_exposes_honest_verification_status(e2e: X402E2EHarness) -> None:
@@ -248,8 +250,7 @@ async def test_health_exposes_honest_verification_status(e2e: X402E2EHarness) ->
     assert r.status_code == 200
     body = r.json()
     status = body["verification_status"]
-    # Live chains report live; a scaffolded chain NEVER reports live.
+    # All three chain families are now live (TRON TRC-20 verifier implemented).
     assert status.get("evm") == "live"
     assert status.get("solana") == "live"
-    assert status.get("tron") == "scaffolded:needs_facilitator"
-    assert status.get("tron") != "live"
+    assert status.get("tron") == "live"

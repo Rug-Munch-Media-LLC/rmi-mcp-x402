@@ -112,9 +112,7 @@ class X402Settings(BaseModel):
 
     #: Path prefixes exempt from the 402 gate (payment protocol + meta routes).
     #: ``/v1/x402`` covers ``/v1/x402/{payment,verify,settle,health}``.
-    free_paths: frozenset[str] = frozenset(
-        {"", "/v1/x402", "/health", "/docs", "/openapi", "/version"}
-    )
+    free_paths: frozenset[str] = frozenset({"/v1/x402", "/health", "/docs", "/openapi", "/version"})
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "X402Settings":
@@ -146,29 +144,19 @@ class X402Settings(BaseModel):
             redis_url=g("X402_REDIS_URL", g("REDIS_URL", "")),
             nonce_ttl=int(g("X402_NONCE_TTL", "86400")),
             coinbase_enabled=_env_bool("X402_COINBASE_ENABLED", True),
-            coinbase_verify=g(
-                "X402_COINBASE_VERIFY", "https://x402.org/facilitator/verify"
-            ),
-            coinbase_settle=g(
-                "X402_COINBASE_SETTLE", "https://x402.org/facilitator/settle"
-            ),
+            coinbase_verify=g("X402_COINBASE_VERIFY", "https://x402.org/facilitator/verify"),
+            coinbase_settle=g("X402_COINBASE_SETTLE", "https://x402.org/facilitator/settle"),
             coinbase_priority=int(g("X402_COINBASE_PRIORITY", "1")),
             coinbase_api_key=g("X402_COINBASE_API_KEY", ""),
             payai_enabled=_env_bool("X402_PAYAI_ENABLED", True),
-            payai_verify=g(
-                "X402_PAYAI_VERIFY", "https://facilitator.payai.network/verify"
-            ),
-            payai_settle=g(
-                "X402_PAYAI_SETTLE", "https://facilitator.payai.network/settle"
-            ),
+            payai_verify=g("X402_PAYAI_VERIFY", "https://facilitator.payai.network/verify"),
+            payai_settle=g("X402_PAYAI_SETTLE", "https://facilitator.payai.network/settle"),
             payai_priority=int(g("X402_PAYAI_PRIORITY", "2")),
             cf_enabled=_env_bool("X402_CF_ENABLED", False),
             cf_verify=g("X402_CF_VERIFY", ""),
             cf_settle=g("X402_CF_SETTLE", ""),
             cf_priority=int(g("X402_CF_PRIORITY", "3")),
-            facilitator_url=g(
-                "X402_FACILITATOR_URL", "https://facilitator.payai.network"
-            ),
+            facilitator_url=g("X402_FACILITATOR_URL", "https://facilitator.payai.network"),
             default_network=g("X402_DEFAULT_NETWORK", "eip155:8453"),
             timeout_seconds=float(g("X402_TIMEOUT_SECONDS", "15")),
             payment_ttl=int(g("X402_PAYMENT_TTL", "3600")),
@@ -203,9 +191,7 @@ class X402Settings(BaseModel):
     def wallet_configured(self) -> bool:
         """Any real receiving wallet present (placeholder / empty disallowed)."""
         candidates = [self.wallet, self.pay_to] + list(self.network_wallets.values())
-        return any(
-            str(c).strip().lower() not in _UNCONFIGURED_MARKERS for c in candidates
-        )
+        return any(str(c).strip().lower() not in _UNCONFIGURED_MARKERS for c in candidates)
 
     def assert_configured(self) -> "X402Settings":
         """Fail closed when no receiving wallet is configured."""
@@ -258,8 +244,13 @@ def create_app(*args: Any, **kwargs: Any) -> Any:
 
     from fastapi import FastAPI
 
+    from app.domain.x402.extensions import register_all_extensions
     from app.domain.x402.middleware import X402Middleware
     from app.domain.x402.router import router as x402_router
+
+    # Wire every extension entry point (payment-identifier idempotency,
+    # gas-sponsoring, scheme stubs) onto the global facilitator router.
+    register_all_extensions()
 
     app = FastAPI(
         title="Coffer — self-hosted x402 payment facilitator",

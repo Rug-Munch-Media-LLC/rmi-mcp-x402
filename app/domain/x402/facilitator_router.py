@@ -35,8 +35,10 @@ from .pricing import (
 )
 from .replay import REPLAY_HTTP_STATUS, ReplayStore
 from .self_facilitator import SelfFacilitator
+from .tron_verifier import verify_tron_payment
 
 log = logging.getLogger(__name__)
+
 
 class FacilitatorRouter:
     """Smart router that picks the best facilitator per chain/asset.
@@ -189,8 +191,12 @@ class FacilitatorRouter:
                 }
             return {"verified": True, "reason": "offline_mode", "settlement": None}
 
-        # TRON stays scaffolded — never claimed verified. [REVIEW]
-        if network_id in SCAFFOLDED_NETWORKS or network_family(network_id) == "tron":
+        # TRON: real TRC-20 verifier (no longer scaffolded).
+        if network_family(network_id) == "tron":
+            return await self._verify_tron(payment_id, tx_hash, network_id, asset, amount_usd)
+
+        # Other scaffolded networks stay scaffolded — never claimed verified.
+        if network_id in SCAFFOLDED_NETWORKS:
             return self._scaffold_non_evm_verify(payment_id, tx_hash, network_id, asset, amount_usd)
 
         # Self-hosted / custom impl path (default).
@@ -268,6 +274,36 @@ class FacilitatorRouter:
             "facilitator": "self-hosted",
             "network": network_id,
         }
+
+    async def _verify_tron(
+        self,
+        payment_id: str,
+        tx_hash: str,
+        network: str,
+        asset: str,
+        amount_usd: float,
+    ) -> dict[str, Any]:
+        """Verify a TRON TRC-20 USDT payment via the Trongrid RPC."""
+        import os
+
+        network_id = normalize_network_id(network)
+        recipient = X402_NETWORK_WALLETS.get(network_id) or X402_WALLET
+        rpc_url = os.getenv("X402_TRON_RPC", "https://api.trongrid.io")
+        fallbacks = [
+            u.strip() for u in os.getenv("X402_TRON_RPC_FALLBACKS", "").split(",") if u.strip()
+        ]
+
+        result = await verify_tron_payment(
+            tx_hash=tx_hash,
+            recipient=recipient,
+            amount_usd=amount_usd,
+            rpc_url=rpc_url,
+            fallback_rpc_urls=fallbacks,
+        )
+        result["network"] = network_id
+        result["payment_id"] = payment_id
+        result["facilitator"] = "tron-rpc"
+        return result
 
     def _scaffold_non_evm_verify(
         self,
@@ -373,9 +409,7 @@ class FacilitatorRouter:
                     response.raise_for_status()
                     data = response.json()
                     self._mark_success(config)
-                    return normalize_settlement(
-                        data, payment_id, tx_hash, network_id, config.name
-                    )
+                    return normalize_settlement(data, payment_id, tx_hash, network_id, config.name)
                 except httpx.HTTPStatusError as e:
                     last_error = f"{config.name}: HTTP {e.response.status_code}"
                     self._mark_failure(config)
@@ -460,6 +494,7 @@ class FacilitatorRouter:
             "no facilitator key/RPC, or chain unreachable",
             "facilitator": "self-hosted",
         }
+
 
 # ── Global router instance (mirrors x402-py accessors) ──────────────────────
 

@@ -65,8 +65,12 @@ def caller_key_from_request(request: Request | None) -> str:
 
 
 def is_free_path(path: str, free_paths: set[str]) -> bool:
-    """Prefix match: ``/v1/health`` also frees ``/v1/health/details``."""
-    return any(path.startswith(prefix) for prefix in free_paths)
+    """Prefix match: ``/v1/health`` also frees ``/v1/health/details``.
+
+    Empty prefixes are rejected (they would match everything and disable
+    the payment gate entirely).
+    """
+    return any(prefix and path.startswith(prefix) for prefix in free_paths)
 
 
 class X402Middleware:

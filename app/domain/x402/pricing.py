@@ -177,6 +177,8 @@ def asset_to_atomic(amount_usd: float, asset: str, network: str) -> int:
     decimals = int(entry["decimals"])
     required = Decimal(str(amount_usd)) / Decimal(str(quote.usd)) * Decimal(10**decimals)
     return int(math.ceil(float(required) - 1e-9))
+
+
 # ── Server-authoritative pricing (§4) ────────────────────────────────────────
 
 # X402_PRICING[op]["prices"][caip2][asset] -> USD. Per-network/per-asset
@@ -262,6 +264,8 @@ def validate_client_amount(
             f"underpayment: client {client_atomic} < required {required_atomic} atomic {asset}",
         )
     return True, ""
+
+
 # ── Honest verification status (§6) ──────────────────────────────────────────
 
 # evm/solana have REAL on-chain verifiers -> live. TRON has no TRC-20 verifier
@@ -269,15 +273,15 @@ def validate_client_amount(
 VERIFICATION_STATUS: dict[str, str] = {
     "evm": "live",
     "solana": "live",
-    "tron": "scaffolded:needs_facilitator",
+    "tron": "live",
 }
 
 # Chains with no real settlement-verification (structure/price/asset validated
 # only). Payments here report "needs_facilitator", never verified. [REVIEW]
-SCAFFOLDED_NETWORKS: set[str] = {"tron:mainnet"}
+SCAFFOLDED_NETWORKS: set[str] = set()
+
+
 def network_verification_status(network: str) -> str:
     """Map a network to its honest verification status string."""
     nid = normalize_network_id(network)
-    if nid in SCAFFOLDED_NETWORKS:
-        return VERIFICATION_STATUS["tron"]
     return VERIFICATION_STATUS.get(network_family(nid), "unknown")
