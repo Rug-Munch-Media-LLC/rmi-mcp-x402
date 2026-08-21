@@ -187,10 +187,13 @@ async def verify_solana_payment(
             response.raise_for_status()
             data = response.json()
     except httpx.HTTPStatusError as e:
+        log.warning("x402_solana_rpc_http_error", extra={"status": e.response.status_code})
         return _failure(f"rpc_http_error: {e.response.status_code}")
     except httpx.RequestError as e:
+        log.warning("x402_solana_rpc_error", extra={"error": str(e)})
         return _failure(f"rpc_error: {e}")
     except ValueError as e:
+        log.warning("x402_solana_rpc_invalid_json", extra={"error": str(e)})
         return _failure(f"rpc_invalid_json: {e}")
 
     if not isinstance(data, dict):
