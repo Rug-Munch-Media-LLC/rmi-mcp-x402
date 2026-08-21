@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     import redis as _redis_types
 
 from app.core.redis import get_redis
+
 from app.routers.x402_enforcement.config import TRIAL_REDIS_PREFIX, TRIAL_WINDOW_SECONDS
 from app.routers.x402_enforcement.pricing import TOOL_PRICES
 

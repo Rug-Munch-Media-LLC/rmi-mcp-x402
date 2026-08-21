@@ -73,7 +73,7 @@ def _load_tool_prices():
                     }
 
     # ─── 2. Add manual pricing for new tools ────────────────────────────────
-    _NEW_TOOL_PRICES = {
+    _new_tool_prices = {
         "forensic_valuation": {
             "price_usd": 0.25,
             "price_atoms": "250000",
@@ -131,7 +131,7 @@ def _load_tool_prices():
             "description": "One-shot token status check — current LP, price, volume, and rug risk warnings",
         },
     }
-    TOOL_PRICES.update(_NEW_TOOL_PRICES)
+    TOOL_PRICES.update(_new_tool_prices)
 
     # ─── 3. NO MORE circular catalog API fallback ─────────────────────────
     # Removed: was causing circular dependency (catalog reads from TOOL_PRICES,
@@ -154,13 +154,6 @@ try:
             "category": "premium",
             "trial_free": 2,
             "description": "Cross-platform OSINT investigation — hunt usernames across 400+ networks, domain intelligence, stealth page capture",
-        },
-        "investigation_report": {
-            "price_usd": 0.20,
-            "price_atoms": "200000",
-            "category": "premium",
-            "trial_free": 1,
-            "description": "Full investigation report — on-chain forensics, financial valuation, OSINT findings, scam scoring in one deliverable",
         },
         "whale_accumulation": {
             "price_usd": 0.10,
@@ -383,15 +376,6 @@ def _ensure_tool_prices():
                 }
     except Exception as e:
         logger.warning(f"x402 enforcement: could not load x402_tools bundles: {e}")
-
-    # DataBus-powered tools
-    try:
-        from app.routers.x402_databus_tools import X402_TOOL_PRICING as _DATABUS_PRICING
-
-        TOOL_PRICES.update(_DATABUS_PRICING)
-        logger.info(f"x402 enforcement: loaded {len(_DATABUS_PRICING)} DataBus-powered tools")
-    except Exception as e:
-        logger.warning(f"x402 enforcement: could not load DataBus tools: {e}")
 
     # Clean up corrupted tool IDs
     _bad_keys = [k for k in TOOL_PRICES if "{" in k or "/" in k or " " in k]

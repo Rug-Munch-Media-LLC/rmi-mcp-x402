@@ -8,14 +8,13 @@ import logging
 import os
 import re
 
+from app.core.redis import get_redis
+from app.routers.protection import get_client_id
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
-from app.core.redis import get_redis
-from app.routers.protection import get_client_id
-
 from app.routers.x402_enforcement.config import CHAIN_USDC, SECURITY_HEADERS
-from app.routers.x402_enforcement.policy import check_trial, _record_refundable_payment
+from app.routers.x402_enforcement.policy import _record_refundable_payment, check_trial
 from app.routers.x402_enforcement.spec import build_402_response, parse_x_pay_header
 from app.routers.x402_enforcement.verification import verify_payment_via_router
 
@@ -38,7 +37,6 @@ async def x402_enforcement_middleware(request: Request, call_next) -> Response:
     # Early-exit checks: free paths, bot detection
     try:
         from app.routers.enforcement_chain import (
-            SECURITY_HEADERS as CHAIN_SECURITY_HEADERS,
             BotDetector,
             EnforcementChain,
             EnforcementContext,
@@ -119,24 +117,24 @@ async def x402_enforcement_middleware(request: Request, call_next) -> Response:
         burst_key = f"x402:burst:{client_id}:{path_tool_id}"
         try:
             burst_count = int(r.get(burst_key) or 0)
-            BURST_LIMIT = int(os.getenv("X402_BURST_LIMIT", "5"))
-            BURST_WINDOW = int(os.getenv("X402_BURST_WINDOW", "60"))
-            if burst_count >= BURST_LIMIT:
+            burst_limit = int(os.getenv("X402_burst_limit", "5"))
+            burst_window = int(os.getenv("X402_burst_window", "60"))
+            if burst_count >= burst_limit:
                 logger.warning(
-                    f"Burst limit: {client_id} hit {burst_count} requests in {BURST_WINDOW}s"
+                    f"Burst limit: {client_id} hit {burst_count} requests in {burst_window}s"
                 )
                 return JSONResponse(
                     status_code=429,
                     content={
-                        "error": f"Rate limited. Max {BURST_LIMIT} requests per {BURST_WINDOW}s per tool.",
-                        "retry_after": BURST_WINDOW,
+                        "error": f"Rate limited. Max {burst_limit} requests per {burst_window}s per tool.",
+                        "retry_after": burst_window,
                     },
-                    headers={**SECURITY_HEADERS, "Retry-After": str(BURST_WINDOW)},
+                    headers={**SECURITY_HEADERS, "Retry-After": str(burst_window)},
                 )
             pipe = r.pipeline()
             pipe.incr(burst_key)
             if burst_count == 0:
-                pipe.expire(burst_key, BURST_WINDOW)
+                pipe.expire(burst_key, burst_window)
             pipe.execute()
         except Exception:
             pass  # Don't block on burst tracking errors

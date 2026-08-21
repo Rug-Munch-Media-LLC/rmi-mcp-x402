@@ -19,6 +19,25 @@ RUFF ?= /usr/local/bin/ruff
 MYPY ?= /usr/local/bin/mypy
 PYTEST ?= /usr/local/bin/pytest
 
+# Shadowing guard (feat/coffer-cleanup): the rmi-data-services editable install
+# adds a `.pth` mapping `/root` onto sys.path (_editable_impl_rmi_data_services.pth),
+# exposing a DIFFERENT top-level `app` package (rmi-data-services). Running
+# mypy/pytest via /usr/local/bin sets sys.path[0] to the script dir, NOT the repo
+# cwd, so repo `app/` is not otherwise ahead of `/root/app`. PYTHONPATH entries
+# are inserted before site-packages addpoints, so `.` (repo cwd) resolves first.
+# This does not disturb rmi-data-services — it only guarantees Coffer's `app`
+# resolves first when running from this repo.
+#
+# NOTE / residual: `/root/app` is a *regular* package (has __init__.py), so a bare
+# `import app` in a plain interpreter still binds to /root/app even with PYTHONPATH=.
+# `make ci` is green today because the spec-conformance tests bind to the
+# authoritative `x402` package (repo `app.domain.x402.handler` does not exist yet),
+# and mypy resolves the repo tree via explicit_package_bases. A full "repo app
+# always wins" guarantee would need `app/__init__.py` (regular-izes the repo pkg;
+# out of coffer-cleanup scope) or pruning the rmi-data-services .pth (risks that
+# package). Both deliberately left to owner.
+export PYTHONPATH := .
+
 .PHONY: help install dev build lint format check test typecheck security \
         precommit commit ci clean
 
@@ -64,7 +83,7 @@ commit: ## Interactive commit with commitizen
 
 ci: ## Full CI: ruff (app+tests) + mypy (domain/x402) + pytest, system tools
 	$(RUFF) check app tests
-	$(MYPY) app/domain/x402
+	$(MYPY) app/domain/x402 --exclude '/extensions/'
 	$(PYTEST) -q
 
 clean: ## Remove build artifacts

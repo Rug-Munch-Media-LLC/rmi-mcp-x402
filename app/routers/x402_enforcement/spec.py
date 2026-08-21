@@ -11,8 +11,8 @@ from typing import Any
 from fastapi.responses import JSONResponse
 
 from app.routers.x402_enforcement.config import (
-    CHAIN_USDC,
     CHAIN_NAMES,
+    CHAIN_USDC,
     EVM_PAY_TO,
     SECURITY_HEADERS,
     SOL_PAY_TO,
@@ -114,7 +114,7 @@ def _build_bazaar_extension(tool_id: str, pricing: dict, accepts: list) -> dict:
     - output.type: always "json"
     """
     # Map our categories to bazaar-standard categories
-    CATEGORY_MAP = {
+    category_map = {
         "security": "security",
         "intelligence": "intelligence",
         "market": "market-data",
@@ -128,7 +128,7 @@ def _build_bazaar_extension(tool_id: str, pricing: dict, accepts: list) -> dict:
         "variant": "crypto",
     }
     category = pricing.get("category", "analysis")
-    bazaar_category = CATEGORY_MAP.get(category, category)
+    bazaar_category = category_map.get(category, category)
 
     # Determine HTTP method: GET for read-only queries, POST for tools that execute
     read_only_suffixes = ("_info", "_list", "_check", "_scan", "_status", "_health")
