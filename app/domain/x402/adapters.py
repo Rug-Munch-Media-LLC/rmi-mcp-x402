@@ -117,7 +117,12 @@ class X402Middleware:
         if self.store.is_paid(payment_id, caller_key=caller_key):
             await self.app(scope, receive, send)
             return
-        body = payment_required_body(resource=path)
+        # Spec §2.2: ``resource`` is the FULL URL of the protected resource,
+        # not the bare path (conformance sweep caught this).
+        server = headers.get("host", "localhost")
+        scheme = scope.get("scheme", "http")
+        full_url = f"{scheme}://{server}{path}"
+        body = payment_required_body(resource=full_url)
         response_headers = payment_required_headers(body)
         log.debug("x402_payment_required", extra={"path": path, "caller": caller_key})
         await send(
