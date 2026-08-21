@@ -93,6 +93,7 @@ paths = [
   '''\.pytest_cache/''',
   '''\.ruff_cache/''',
   '''\.mypy_cache/''',
+  '''uv\.lock''',
   '''vendor/''',
   '''scripts/''',
   '''AGENTS\.md''',
