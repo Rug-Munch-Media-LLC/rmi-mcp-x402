@@ -29,7 +29,6 @@ try:
     from x402 import X402_VERSION
     from x402.http import FacilitatorConfig, HTTPFacilitatorClient
     from x402.mechanisms.evm.exact import ExactEvmServerScheme
-    from x402.schemas import Network
     from x402.server import x402ResourceServer
 
     SDK_VERSION = X402_VERSION

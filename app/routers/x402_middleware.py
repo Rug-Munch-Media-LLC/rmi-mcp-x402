@@ -32,13 +32,17 @@ router = APIRouter(prefix="/api/v1/x402", tags=["x402-payment-middleware"])
 
 # Import x402 SDK components
 try:
-    from x402 import X402_VERSION
-    from x402.http import FacilitatorConfig, HTTPFacilitatorClient
-    from x402.mechanisms.evm.exact import ExactEvmServerScheme
-    from x402.schemas import Network
-    from x402.server import x402ResourceServer
+    import importlib.util
 
-    X402_SDK_AVAILABLE = True
+    from x402 import X402_VERSION
+
+    X402_SDK_AVAILABLE = (
+        importlib.util.find_spec("x402") is not None
+        and importlib.util.find_spec("x402.http") is not None
+        and importlib.util.find_spec("x402.mechanisms.evm.exact") is not None
+        and importlib.util.find_spec("x402.schemas") is not None
+        and importlib.util.find_spec("x402.server") is not None
+    )
     logger.info(f"x402 SDK v{X402_VERSION} loaded")
 except ImportError as e:
     X402_SDK_AVAILABLE = False
@@ -199,9 +203,7 @@ async def payment_ledger(
 
             # Anonymize customer
             customer = receipt.get("customer_address", "")
-            anon_customer = (
-                customer[:6] + "..." + customer[-4:] if len(customer) > 10 else None
-            )
+            anon_customer = customer[:6] + "..." + customer[-4:] if len(customer) > 10 else None
 
             ledger.append(
                 {

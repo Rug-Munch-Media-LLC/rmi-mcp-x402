@@ -20,11 +20,20 @@ from app.routers.x402_enforcement.config import (
     get_client_id,  # noqa: F401
 )
 
-# Pricing catalog
-from app.routers.x402_enforcement.pricing import TOOL_PRICES, _ensure_tool_prices  # noqa: F401
+# Routers
+from app.routers.x402_enforcement.endpoints import discovery_router, router  # noqa: F401
+
+# Middleware
+from app.routers.x402_enforcement.middleware import x402_enforcement_middleware  # noqa: F401
 
 # Policy helpers
-from app.routers.x402_enforcement.policy import check_trial, _record_refundable_payment  # noqa: F401
+from app.routers.x402_enforcement.policy import (  # noqa: F401
+    _record_refundable_payment,
+    check_trial,
+)
+
+# Pricing catalog
+from app.routers.x402_enforcement.pricing import TOOL_PRICES, _ensure_tool_prices  # noqa: F401
 
 # 402 spec builders
 from app.routers.x402_enforcement.spec import (
@@ -42,12 +51,6 @@ from app.routers.x402_enforcement.verification import (
     verify_payment,
     verify_payment_via_router,
 )
-
-# Middleware
-from app.routers.x402_enforcement.middleware import x402_enforcement_middleware  # noqa: F401
-
-# Routers
-from app.routers.x402_enforcement.endpoints import discovery_router, router  # noqa: F401
 
 __all__ = [
     "CHAIN_NAMES", "CHAIN_USDC", "DISCOVERY_CACHE_TTL", "EVM_PAY_TO",

@@ -7,6 +7,7 @@ import logging
 import time
 
 from app.core.redis import get_redis
+
 from app.routers.x402_enforcement.config import CHAIN_USDC, EVM_PAY_TO
 from app.routers.x402_enforcement.pricing import TOOL_PRICES, _ensure_tool_prices
 
@@ -206,7 +207,7 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
     5. Mark the tx as spent in Redis with 86400s TTL (prevent double-use, 24h window)
     """
     # ERC-20 Transfer event signature: keccak256("Transfer(address,address,uint256)")
-    TRANSFER_EVENT_TOPIC0 = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+    transfer_event_topic0 = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
     try:
         accepted = payload.get("accepted", {})
@@ -303,7 +304,7 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
 
             if len(topics) < 3:
                 continue
-            if topics[0].lower() != TRANSFER_EVENT_TOPIC0:
+            if topics[0].lower() != transfer_event_topic0:
                 continue
             if log.get("address", "").lower() != usdc_address:
                 continue
@@ -372,25 +373,6 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
                 "timestamp": time.time(),
             }
             r.setex(spent_key, 86400, json.dumps(payment_data))
-
-        # Persist to Supabase (non-blocking)
-        try:
-            import asyncio
-
-            from app.routers.x402_dashboard import _persist_payment_to_supabase
-
-            asyncio.create_task(
-                _persist_payment_to_supabase(
-                    tool=tool_name,
-                    amount_atoms=str(actual_amount or amount_atoms or "0"),
-                    chain=chain_key,
-                    payer=payer or "unknown",
-                    tx_hash=tx_hash,
-                    status="fulfilled",
-                )
-            )
-        except Exception:
-            pass
 
         logger.info(
             f"Verified USDC payment: {tx_hash[:16]}... on {chain_key} "

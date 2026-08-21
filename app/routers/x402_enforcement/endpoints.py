@@ -7,16 +7,21 @@ import logging
 import os
 import time
 
+from app.core.redis import get_redis
+from app.routers.protection import get_client_id
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from app.core.redis import get_redis
-from app.routers.protection import get_client_id
-
 from app.routers.x402_enforcement.config import (
-    CHAIN_USDC, CHAIN_NAMES, EVM_PAY_TO, SOL_PAY_TO,
-    SECURITY_HEADERS, _discovery_cache, _discovery_cache_time,
-    DISCOVERY_CACHE_TTL, _ensure_pay_addresses,
+    CHAIN_NAMES,
+    CHAIN_USDC,
+    DISCOVERY_CACHE_TTL,
+    EVM_PAY_TO,
+    SECURITY_HEADERS,
+    SOL_PAY_TO,
+    _discovery_cache,
+    _discovery_cache_time,
+    _ensure_pay_addresses,
 )
 from app.routers.x402_enforcement.pricing import TOOL_PRICES
 
@@ -61,13 +66,13 @@ def _build_discovery_response():
 
         desc = pricing.get("description", "")
         if not desc:
-            _TOOL_DESCRIPTIONS = {
+            _tool_descriptions = {
                 "forensic_valuation": "Institutional-grade token valuation — DCF intrinsic value, comparable analysis with outlier detection, scam probability scoring",
                 "osint_identity_hunt": "Cross-platform OSINT — hunt usernames across 400+ networks, domain intelligence, stealth page capture",
                 "investigation_report": "Full investigation report — on-chain forensics, financial valuation, OSINT, scam scoring in one deliverable",
                 "forensic_pack": "Forensic Investigation Pack — valuation + OSINT + report at 33% discount",
             }
-            desc = _TOOL_DESCRIPTIONS.get(tool_id, f"{tool_id} — crypto intelligence tool")
+            desc = _tool_descriptions.get(tool_id, f"{tool_id} — crypto intelligence tool")
         tools[tool_id] = {
             "description": desc,
             "price_usd": price_usd,
