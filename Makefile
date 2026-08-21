@@ -90,3 +90,17 @@ clean: ## Remove build artifacts
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete
 	rm -rf .pytest_cache .mypy_cache .ruff_cache dist build *.egg-info
+
+# ── Deploy (Coffer payment-facilitator) ─────────────────────────────────────
+# - run  : local uvicorn, HTTP /v1/x402 on :8001 (fail-closed on unset wallet)
+# - up   : docker compose up --build (coffer + redis)  /  down : teardown
+.PHONY: run up down
+
+run: ## Run the x402 HTTP facilitator locally (uvicorn, :8001)
+	uvicorn --factory app.domain.x402.config:create_app --host 0.0.0.0 --port 8001
+
+up: ## Build + start coffer + redis via docker compose
+	docker compose up --build -d
+
+down: ## Stop + remove coffer + redis containers
+	docker compose down
