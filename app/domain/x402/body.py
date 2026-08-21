@@ -201,6 +201,84 @@ def build_multi_asset_accepts(
     return accepts
 
 
+def _option_v2(
+    *,
+    operation: str,
+    caip2: str,
+    asset: str,
+    entry: dict[str, Any],
+) -> dict[str, Any] | None:
+    """One v2 ``accepts[]`` entry (spec §5.1: amount/payTo/asset-address).
+
+    Mirrors :func:`_option` skip rules — never advertise an option that cannot
+    be quoted honestly. Native assets with no contract carry the symbol as
+    ``asset`` (the spec allows an ISO-style identifier where no contract exists).
+    """
+    unit_usd = _usd_per_unit_for(asset)
+    if unit_usd is None:
+        return None
+    price_usd = resolve_price_usd(operation, caip2, asset)
+    if price_usd <= 0:
+        return None
+    try:
+        amount_atomic = asset_to_atomic(price_usd, asset, caip2)
+    except ValueError:
+        return None
+    contract = str(entry.get("contract") or "")
+    return {
+        "scheme": "exact",
+        "network": caip2,
+        "amount": str(amount_atomic),
+        "asset": contract or asset.upper(),
+        "payTo": _pay_to_address(caip2),
+        "maxTimeoutSeconds": 60,
+        "extra": {"name": str(entry.get("name") or asset), "version": "2"},
+    }
+
+
+def build_payment_required_v2(
+    operation: str,
+    resource_url: str = "",
+    description: str = "",
+    mime_type: str = "application/json",
+) -> dict[str, Any]:
+    """Spec-canonical **v2** PaymentRequired body (x402-specification-v2 §5.1).
+
+    Differences from v1: ``x402Version: 2``, required top-level ``resource``
+    ResourceInfo, and accepts entries keyed ``amount``/``payTo`` with the
+    asset CONTRACT ADDRESS as ``asset`` plus required ``maxTimeoutSeconds``.
+    """
+    if not description:
+        description = _operation_description(operation)
+    accepts: list[dict[str, Any]] = []
+    for caip2, assets in SUPPORTED_ASSETS.items():
+        if not _pay_to_address(caip2):
+            continue
+        for asset, entry in assets.items():
+            option = _option_v2(operation=operation, caip2=caip2, asset=asset, entry=entry)
+            if option is not None:
+                accepts.append(option)
+    body: dict[str, Any] = {
+        "x402Version": 2,
+        "resource": {
+            "url": resource_url,
+            "description": description,
+            "mimeType": mime_type,
+        },
+        "accepts": accepts,
+        "extensions": {},
+    }
+    return body
+
+
+def protocol_version() -> int:
+    """Configured wire version (``X402_PROTOCOL_VERSION``, default 1)."""
+    import os
+
+    raw = os.getenv("X402_PROTOCOL_VERSION", "1").strip()
+    return 2 if raw == "2" else 1
+
+
 def build_payment_required(
     operation: str,
     resource: str = "",
@@ -228,7 +306,9 @@ def _encode_payment_required_body(body: dict[str, Any]) -> str:
 
 
 def payment_required_body(resource: str = "", operation: str = "api_access") -> dict[str, Any]:
-    """The spec body for a generic 402 challenge."""
+    """The spec body for a generic 402 challenge (v1 or v2 per config)."""
+    if protocol_version() == 2:
+        return build_payment_required_v2(operation or "api_access", resource_url=resource)
     return build_payment_required(operation or "api_access", resource=resource, multi_asset=True)
 
 
