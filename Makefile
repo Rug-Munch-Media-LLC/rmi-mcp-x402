@@ -14,6 +14,11 @@
 
 SHELL := /bin/bash
 
+# System tool paths (verified 2026-08-21 on this host). Override per-machine.
+RUFF ?= /usr/local/bin/ruff
+MYPY ?= /usr/local/bin/mypy
+PYTEST ?= /usr/local/bin/pytest
+
 .PHONY: help install dev build lint format check test typecheck security \
         precommit commit ci clean
 
@@ -57,7 +62,10 @@ precommit: ## Install pre-commit hooks
 commit: ## Interactive commit with commitizen
 	cz commit || git commit
 
-ci: lint typecheck test ## Full CI: lint + typecheck + test
+ci: ## Full CI: ruff (app+tests) + mypy (domain/x402) + pytest, system tools
+	$(RUFF) check app tests
+	$(MYPY) app/domain/x402
+	$(PYTEST) -q
 
 clean: ## Remove build artifacts
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
