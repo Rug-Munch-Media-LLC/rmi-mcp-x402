@@ -240,6 +240,11 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
         # ── Blockscout API v2 (free, no API key needed) ──
         # Maps chain_id → Blockscout base URL
         chain_id = chain_cfg.get("chain_id")
+        if not isinstance(chain_id, int):
+            return {
+                "verified": False,
+                "reason": f"No Blockscout URL for chain_id {chain_id}",
+            }
         blockscout_urls = {
             1: "https://eth.blockscout.com",
             42161: "https://arbitrum.blockscout.com",
