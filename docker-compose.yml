@@ -1,0 +1,65 @@
+# Coffer — self-hosted x402 payment facilitator. One-command deploy.
+#   cp .env.example .env      # fill X402_WALLET (+ REDIS_URL auto-provided)
+#   docker compose up --build -d
+# Exposes the /v1/x402 HTTP surface on http://localhost:8001.
+services:
+  coffer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: coffer:latest
+    container_name: coffer
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Compose wires the managed redis into Coffer for nonce/replay.
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "${X402_PORT:-8001}:8001"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8001/v1/x402/health',timeout=3)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - coffer-net
+    # Minimal hardening: read-only rootfs (writes only to /dev/shm TMPFS).
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7-alpine
+    container_name: coffer-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - coffer-net
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+
+networks:
+  coffer-net:
+    driver: bridge
+
+volumes:
+  redis-data:
