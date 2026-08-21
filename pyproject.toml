@@ -124,7 +124,7 @@ ignore_errors = true
 # app layer, the public ``coffer`` facade, and the vendored x402 spec impl
 # (the facade resolves vendor/x402 at runtime — see docs/COFFER-ARCHITECTURE.md).
 [tool.hatch.build.targets.wheel]
-packages = ["app", "coffer", "vendor"]
+packages = ["app", "coffer", "coffer_client", "vendor"]
 
 [build-system]
 requires = ["hatchling"]
