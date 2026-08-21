@@ -221,8 +221,16 @@ class FacilitatorRouter:
             self, payment_id, tx_hash, network_id, asset, amount_usd
         )
         from app.domain.x402.observability import observe_verify
+        from app.domain.x402.webhooks import emit_payment_event
 
         observe_verify(verified_result, payment_id=payment_id, tx_hash=tx_hash)
+        emit_payment_event(
+            "payment.verified",
+            payment_id=payment_id,
+            transaction=tx_hash,
+            network=network_id,
+            verified=bool(verified_result.get("verified")),
+        )
         return verified_result
 
     async def _verify_self_hosted(
