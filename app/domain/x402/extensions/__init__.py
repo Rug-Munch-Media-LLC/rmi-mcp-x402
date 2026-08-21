@@ -79,8 +79,11 @@ def register_all_extensions(
     else:
         _wire_gas = _rf
 
+    from app.domain.x402.extensions.bazaar import get_bazaar_catalog
+
     registered: dict[str, Any] = {
         "payment_identifier": PaymentIdentifierStore(),
+        "bazaar": get_bazaar_catalog(),
         "schemes": {
             "upto": UpToScheme,
             "batch-settlement": BatchSettlementScheme,

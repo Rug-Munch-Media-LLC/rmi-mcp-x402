@@ -259,6 +259,11 @@ def create_app(*args: Any, **kwargs: Any) -> Any:
     )
     app.include_router(x402_router)
 
+    # Bazaar discovery: browse catalog of declared paid resources.
+    from app.domain.x402.extensions.bazaar import register_bazaar_router
+
+    app.include_router(register_bazaar_router())
+
     app.add_middleware(
         X402Middleware,
         free_paths=set(cfg.free_paths),
