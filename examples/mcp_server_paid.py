@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
-"""MCP server that auto-pays x402 APIs — ported from the official
-`guides__mcp-server-with-x402.md` to this repo's Python stack.
+"""Coffer: MCP server with a paid tool — ported from the official
+`guides__mcp-server-with-x402.md` to Coffer's Python stack.
 
-The official guide wires Claude to an x402 paid API through an MCP bridge that
-(1) calls the resource server, (2) on `402 + PAYMENT-REQUIRED` parses the
-payment requirements, (3) creates/signs a payment with a registered scheme, and
-(4) retries with the payment header. This example reproduces that flow in Python
-using FastMCP (server) + httpx (client) with an `X402Client` that wraps an httpx
-client with automatic 402 handling (our `@x402/axios` equivalent).
+Two halves, mirroring the official guide:
+
+  * client side — an MCP bridge that auto-pays an x402 API when it gets a 402
+    (the official @x402/axios wrapper's job, reproduced with httpx);
+  * server side — an MCP tool gated by `@coffer.require_payment`, so an agent
+    pays for a tool result over MCP the native Coffer way.
 
 Run:
     pip install fastmcp httpx pydantic
     EVM_PRIVATE_KEY=<wallet with USDC> SVM_PRIVATE_KEY=<base58 Solana key> \
         RESOURCE_SERVER_URL=http://localhost:4021 \
         python examples/mcp_server_paid.py
-    # then connect an MCP client (Claude Desktop / Cursor) and call
-    # `get-data-from-resource-server`. Unpaid -> auto-pay -> data.
-
-At least one of EVM_PRIVATE_KEY / SVM_PRIVATE_KEY is required.
-Direct (non-MCP) callers can use X402Client directly for programmatic access.
+    # connect an MCP client (Claude Desktop / Cursor) and call
+    # `get_data_from_resource_server`. Unpaid -> auto-pay -> data.
 """
 
 from __future__ import annotations
@@ -31,23 +28,21 @@ from typing import Any
 import httpx
 from fastmcp import FastMCP
 
-from app.domain.x402.middleware import (  # repo helpers for the server side
-    HEADER_PAYMENT_REQUIRED,
-    HEADER_X_PAYMENT_ID,
-)
+from _coffer_facade import coffer, require_payment  # brand facade (Coffer)
+
+HEADER_PAYMENT_REQUIRED = "PAYMENT-REQUIRED"
+HEADER_X_PAYMENT_ID = "X-Payment-ID"
 
 
 class X402Client:
     """httpx client that transparently completes the x402 payment handshake.
 
     Mirrors the official `wrapAxiosWithPayment` behaviour: on `402` with a
-    `PAYMENT-REQUIRED` header, parse the `accepts[]`, pick a scheme, create a
+    `PAYMENT-REQUIRED` header, parse `accepts[]`, pick a scheme, create a
     payment payload, and retry with `X-Payment-ID`.
 
-    NOTE: this scaffold signs via the caller-supplied `sign_payload` hook so it
-    works against the public `x402-py` verifier as well as the repo's
-    self-hosted verifier (`app/routers/x402_verifier.py`). Production users
-    should supply a real scheme signer (EIP-3009 / EIP-7702 / SPL).
+    NOTE: production callers should supply a real scheme signer (EIP-3009 /
+    EIP-7702 / SPL) via `sign_payload`.
     """
 
     def __init__(self, base_url: str, sign_payload: Any = None) -> None:
@@ -80,19 +75,7 @@ class X402Client:
         self._client.close()
 
 
-# --- server-side guard (this repo) ------------------------------------------
-# The same decorator that gates FastAPI routes gates MCP tool calls, so an MCP
-# server exposing paid tools advertises the identical payment surface.
-from app.domain.x402.middleware import require_payment  # noqa: E402
-
-
-def paid_tool(ctx: Any) -> Any:
-    """Decorator used by the paid MCP tool below (via require_payment)."""
-    return require_payment()(ctx)
-
-
-# --- MCP server -------------------------------------------------------------
-mcp = FastMCP("x402 MCP paid bridge", version="1.0.0")
+mcp = FastMCP("Coffer MCP paid bridge", version="1.0.0")
 
 RESOURCE_SERVER_URL = os.getenv("RESOURCE_SERVER_URL", "http://localhost:4021")
 ENDPOINT_PATH = os.getenv("ENDPOINT_PATH", "/weather")
@@ -112,11 +95,11 @@ def get_data_from_resource_server() -> str:
 
 @mcp.tool()
 @require_payment()
-def get_paid_mcp_payload(request: Any) -> str:
+def get_paid_mcp_payload() -> str:
     """Server-side gated tool: requires a valid X-Payment-ID to run.
 
-    Unpaid invocations return a spec-exact 402. (Kept for parity with the
-    repo's paid-MCP mode; the auto-pay bridge above is the client side.)
+    Unpaid invocations return a spec-exact 402. (Parity with Coffer's paid-MCP
+    mode; the auto-pay bridge above is the client side.)
     """
     return json.dumps({"data": "paid MCP tool result"})
 
