@@ -22,7 +22,7 @@ fails closed. ``build_permit_calldata`` emits the real ``permit(...)`` calldata
 for the facilitator to broadcast.
 
 Honest status: the sponsor path either delegates to a configured ``sponsor_impl``
-(a real sponsor key) or reports ``scaffolded:needs_sponsor_key`` — it NEVER
+(a real sponsor key) or reports ``scaffolded:needs_facilitator`` — it NEVER
 returns a fabricated tx_hash and NEVER claims ``verified:true`` for the
 on-chain settlement step it did not execute. On-chain replay protection for the
 permit is the token's ``nonces(owner)`` counter — an RPC check the scaffold
@@ -53,7 +53,9 @@ PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3"
 _EIP712_DOMAIN_STRING = (
     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
 )
-_PERMIT_STRING = "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+_PERMIT_STRING = (
+    "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+)
 _PERMIT_SELECTOR = "0xd505accf"  # permit(address,address,uint256,uint256,uint8,bytes32,bytes32)
 
 # Optional ecrecover-aware crypto layer (eth_keys/eth_utils are pyproject deps).
@@ -74,6 +76,13 @@ except ImportError:  # pragma: no cover - defensive
     _ECRECOVER_AVAILABLE = False
 
 
+# Gas economics (per x402 gas-sponsoring spec):
+#   - The BUYER pays gas for their actual payment transaction (the USDC
+#     transfer / on-chain payment). Gas sponsoring does NOT cover that.
+#   - This extension sponsors ONLY the Permit2 *approval* gas step (EIP-2612
+#     permit / ERC-20 approval), so a buyer without ETH can still approve.
+#   - The facilitator/merchant fronts the approval tx; the buyer's payment
+#     tx gas remains the buyer's responsibility. Never overclaim "gasless".
 def declare_eip2612_gas_sponsoring_extension() -> dict[str, dict[str, Any]]:
     """Advertise EIP-2612 gas sponsoring (spec §Server Usage / How It Works)."""
     return {
@@ -239,7 +248,11 @@ def verify_permit_signature(
     except (ValueError, TypeError):
         return False, "missing/invalid permit 'token' (verifyingContract)", ""
     try:
-        value = _to_int(payload.get("amount") if payload.get("amount") is not None else payload.get("value") or 0)
+        value = _to_int(
+            payload.get("amount")
+            if payload.get("amount") is not None
+            else payload.get("value") or 0
+        )
         nonce = _to_int(payload.get("nonce") or 0)
         deadline = _to_int(payload.get("deadline") or 0)
     except ValueError:
@@ -248,8 +261,12 @@ def verify_permit_signature(
     # EIP-2612 domain: the ERC-20 token's name + version (EIP-712 "version" is
     # the EIP-2612 version string, typically "1"; the x402 payload may carry it
     # explicitly via tokenName/tokenVersion, else fall back to env / default).
-    name = (name or str(payload.get("tokenName") or "") or os.getenv("X402_EIP712_NAME", "USD Coin")).strip()
-    version = (version or str(payload.get("tokenVersion") or "") or os.getenv("X402_EIP712_VERSION", "1")).strip()
+    name = (
+        name or str(payload.get("tokenName") or "") or os.getenv("X402_EIP712_NAME", "USD Coin")
+    ).strip()
+    version = (
+        version or str(payload.get("tokenVersion") or "") or os.getenv("X402_EIP712_VERSION", "1")
+    ).strip()
 
     sig = _parse_signature(payload.get("signature"))
     if sig is None:
@@ -280,10 +297,14 @@ def verify_permit_signature(
     except Exception as e:  # noqa: BLE001 - fail closed on any recover error
         return False, f"cannot recover permit signer: {e}", ""
     if recovered_addr != owner:
-        return False, (
-            f"permit signer {recovered_addr} != owner {owner}"
-            f" (forged or tampered permit — fields changed the digest)"
-        ), ""
+        return (
+            False,
+            (
+                f"permit signer {recovered_addr} != owner {owner}"
+                f" (forged or tampered permit — fields changed the digest)"
+            ),
+            "",
+        )
     return True, "", recovered_addr
 
 
@@ -304,7 +325,9 @@ def build_permit_calldata(
         raise ValueError(f"refusing to build permit calldata: {reason}")
     owner = to_checksum_address(str(payload["owner"]))
     spender = to_checksum_address(str(payload.get("spender") or PERMIT2_ADDRESS))
-    value = _to_int(payload.get("amount") if payload.get("amount") is not None else payload.get("value") or 0)
+    value = _to_int(
+        payload.get("amount") if payload.get("amount") is not None else payload.get("value") or 0
+    )
     deadline = _to_int(payload.get("deadline") or 0)
     parsed = _parse_signature(payload.get("signature"))
     if parsed is None:
@@ -365,7 +388,7 @@ class GasSponsoringFacilitator:
 
     * with a configured ``sponsor_impl`` (a real sponsor key) the batch is
       delegated to it and its tx_hash returned;
-    * WITHOUT one, the scaffold reports ``scaffolded:needs_sponsor_key`` and
+    * WITHOUT one, the scaffold reports ``scaffolded:needs_facilitator`` and
       ``apply_gas_batch`` raises ``NotImplementedError`` — so no caller can
       mistake the scaffold for a verified settlement or record a fabricated hash.
     """
@@ -405,13 +428,19 @@ class GasSponsoringFacilitator:
         Honest: structure + validation + (EIP-2612) REAL ecrecover implemented.
         A forged/tampered permit fails closed here (raises ValueError). The
         returned payment carries NO fabricated tx_hash — that is only provided
-        by a real ``sponsor_impl``. Status is ``needs_sponsor_key`` when no
+        by a real ``sponsor_impl``. Status is ``needs_facilitator`` when no
         sponsor key is configured; the on-chain step is never claimed verified.
         """
         flow = self._resolve_flow()
         exts: Any = (self.payment or {}).get("extensions") or {}
         info = exts.get(flow, {}) if (isinstance(exts, dict) and flow != "none") else {}
-        kind = "eip2612" if flow == EIP2612_KEY else "erc20-approval" if flow == ERC20_APPROVAL_KEY else "none"
+        kind = (
+            "eip2612"
+            if flow == EIP2612_KEY
+            else "erc20-approval"
+            if flow == ERC20_APPROVAL_KEY
+            else "none"
+        )
         errors = _validate_permit2_approval_payload(info, flow) if flow != "none" else []
         if errors:
             raise ValueError(f"invalid {flow} gas-sponsoring payload: {'; '.join(errors)}")
@@ -427,12 +456,13 @@ class GasSponsoringFacilitator:
             ok, reason, owner = verify_permit_signature(info, chain_id=chain_id)
             if not ok:
                 raise ValueError(f"failed EIP-2612 permit verification: {reason}")
-            status = "ready" if sponsored else "needs_sponsor_key"
+            status = "ready" if sponsored else "needs_facilitator"
             return {
                 "sponsor_flow": kind,
                 "permit2_method": "settleWithPermit",
                 "scaffolded": status,
-                "verified": True,  # signature-authentic only; on-chain still sponsor's duty
+                "signature_verified": True,  # EIP-2612 ecrecover confirmed the permit signature
+                "verified": False,  # H1: payment NOT settled without a sponsor key
                 "signer": owner,
                 "permit_calldata": build_permit_calldata(info, chain_id=chain_id),
                 "tx_hash": None,  # set by the on-chain sponsor only — never fabricated
@@ -440,7 +470,7 @@ class GasSponsoringFacilitator:
 
         # ERC-20 approval path: structure validated; the raw signed tx replay /
         # broadcast is the sponsor's job (no local ecrecover of a raw tx).
-        status = "ready" if sponsored else "needs_sponsor_key"
+        status = "ready" if sponsored else "needs_facilitator"
         return {
             "sponsor_flow": kind,
             "permit2_method": "settle",
@@ -454,12 +484,12 @@ class GasSponsoringFacilitator:
         With a configured ``sponsor_impl`` (a real sponsor key) the batch is
         delegated there and its returned tx_hash used. WITHOUT one, we raise
         so no caller can record a non-existent settlement; the honest status is
-        ``scaffolded:needs_sponsor_key``.
+        ``scaffolded:needs_facilitator``.
         """
         if self.sponsor_impl is not None:
             return await self.sponsor_impl(self.payment)
         raise NotImplementedError(
-            "gas sponsoring on-chain settlement is scaffolded:needs_sponsor_key "
+            "gas sponsoring on-chain settlement is scaffolded:needs_facilitator "
             "(no sponsor_impl / sponsor key configured — nothing was broadcast)"
         )
 
@@ -482,9 +512,7 @@ def register_gas_sponsoring_facilitator(
     """
 
     async def _verify(payment: dict[str, Any]) -> VerifyResult:
-        fac = GasSponsoringFacilitator(
-            key=network, payment=payment, sponsor_impl=sponsor_impl
-        )
+        fac = GasSponsoringFacilitator(key=network, payment=payment, sponsor_impl=sponsor_impl)
         try:
             prepped = await fac.prepare_payment()
             return VerifyResult(
@@ -502,9 +530,7 @@ def register_gas_sponsoring_facilitator(
             )
 
     async def _settle(payment: dict[str, Any]) -> str | None:
-        fac = GasSponsoringFacilitator(
-            key=network, payment=payment, sponsor_impl=sponsor_impl
-        )
+        fac = GasSponsoringFacilitator(key=network, payment=payment, sponsor_impl=sponsor_impl)
         return await fac.apply_gas_batch()  # delegates to sponsor or raises honestly
 
     class _Wrapper:

@@ -24,6 +24,7 @@ Responsibilities
 # Copyright (c) 2026 Rug Munch Media LLC
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
@@ -373,6 +374,9 @@ class ReplayStore:
         self._mem: set[str] = set()
         self._redis = None
         self._redis_broken = False
+        # H2: serialize the in-memory fallback so check-then-add is atomic
+        # within one process (Redis SETNX remains canonical for production).
+        self._lock = asyncio.Lock()
         if REDIS_URL:
             try:
                 from redis import asyncio as aioredis  # type: ignore[import-untyped]
@@ -401,12 +405,13 @@ class ReplayStore:
                 log.warning("x402_replay_redis_error", extra={"error": str(e)})
                 self._redis_broken = True
                 self._redis = None
-        if key in self._mem:
-            return False
-        self._mem.add(key)
-        if len(self._mem) > self._max_mem:
-            self._mem = set(list(self._mem)[-self._max_mem :])
-        return True
+        async with self._lock:
+            if key in self._mem:
+                return False
+            self._mem.add(key)
+            if len(self._mem) > self._max_mem:
+                self._mem = set(list(self._mem)[-self._max_mem :])
+            return True
 
     async def check(self, key: str) -> bool:
         """Non-destructive membership check (True when already used)."""
@@ -557,7 +562,7 @@ class SelfFacilitator:
                 asset=asset,
                 network=network,
             )
-        if not self.pay_to or self.pay_to == "pry-default-wallet":
+        if not self.pay_to or self.pay_to == "coffer-unconfigured-wallet":
             return VerifyResult(
                 verified=False,
                 reason="server wallet (payTo) not configured",
@@ -802,7 +807,7 @@ def _eip7702_matches(
     value to payTo. Unknown assets fail closed.
     """
     pay_to = _eip7702_wallet(network)
-    if not pay_to or pay_to == "pry-default-wallet":
+    if not pay_to or pay_to == "coffer-unconfigured-wallet":
         return False, "server wallet not configured"
     tx_to = str(tx.get("to") or "").lower()
     entry = resolve_asset_entry(network, asset)
@@ -1004,7 +1009,7 @@ class FacilitatorRouter:
 
     def readiness(self) -> dict[str, Any]:
         wallet = (X402_WALLET or "").strip()
-        wallet_configured = bool(wallet and wallet != "pry-default-wallet")
+        wallet_configured = bool(wallet and wallet != "coffer-unconfigured-wallet")
         mode = "self_hosted" if self.self_hosted else "external"
         if self.self_hosted:
             fac = self._get_self_facilitator()
@@ -1210,9 +1215,9 @@ class FacilitatorRouter:
                     response.raise_for_status()
                     data = response.json()
                     self._mark_success(config)
-                    verified = bool(
-                        data.get("isValid") or data.get("verified") or data.get("success")
-                    )
+                    # H3 honesty: a bare "success":true is NOT proof of payment
+                    # -> require an explicit verification field (isValid/verified).
+                    verified = bool(data.get("isValid") or data.get("verified"))
                     if verified:
                         ok, reason = await self._enforce_replay(tx_hash, network_id)
                         if not ok:
@@ -1422,14 +1427,20 @@ class FacilitatorRouter:
                     last_error = f"{config.name}: invalid JSON - {e}"
                     self._mark_failure(config)
         if network_family(network_id) == "evm":
+            # EIP-7702 self-VERIFY checks on-chain receipts; it does NOT
+            # broadcast a settlement. Returning success here would fabricate
+            # a settlement record (C1 honesty fix) -> fail closed.
             return {
-                "success": True,
-                "transaction": tx_hash,
-                "network": network_id,
+                "success": False,
                 "payment_id": payment_id,
-                "facilitator": "eip-7702",
-                "settled_at": datetime.now(UTC).isoformat(),
-                "note": "Verified via EIP-7702 RPC",
+                "reason": (
+                    "needs_facilitator: no external facilitator settled and "
+                    "no self-hosted settle key configured (EIP-7702 verifies "
+                    "on-chain receipts but does not broadcast settlements)"
+                ),
+                "scaffolded": True,
+                "network": network_id,
+                "facilitator": "eip-7702-verify-only",
             }
         if network_family(network_id) in ("solana", "tron"):
             return {
@@ -1469,14 +1480,19 @@ class FacilitatorRouter:
                 "note": "Broadcast by self-hosted facilitator",
             }
         if network_family(network_id) == "solana":
+            # SPL RPC verifies on-chain receipts; it does NOT broadcast a
+            # settlement. Returning success here would fabricate a settlement
+            # record (C2 honesty fix) -> fail closed.
             return {
-                "success": True,
-                "transaction": tx_hash,
-                "network": network_id,
+                "success": False,
                 "payment_id": payment_id,
-                "facilitator": "solana-rpc",
-                "settled_at": datetime.now(UTC).isoformat(),
-                "note": "Verified on-chain via SPL RPC",
+                "reason": (
+                    "needs_facilitator: solana SPL RPC verifies on-chain "
+                    "receipts but does not broadcast settlements"
+                ),
+                "scaffolded": True,
+                "network": network_id,
+                "facilitator": "solana-rpc-verify-only",
             }
         return {
             "success": False,
@@ -1494,9 +1510,18 @@ class FacilitatorRouter:
         network: str,
         facilitator: str,
     ) -> dict[str, Any]:
+        # M2 honesty: do not fabricate success on any HTTP-200 body -> require
+        # an explicit settlement/verification signal from the facilitator.
+        success = bool(
+            data.get("success") is True
+            or data.get("isValid") is True
+            or data.get("verified") is True
+            or data.get("settled") is True
+            or bool(data.get("transactionHash") or data.get("transaction"))
+        )
         return {
-            "success": True,
-            "transaction": tx_hash,
+            "success": success,
+            "transaction": data.get("transactionHash", data.get("transaction", tx_hash)),
             "network": network,
             "payment_id": payment_id,
             "facilitator": facilitator,
@@ -1505,6 +1530,11 @@ class FacilitatorRouter:
             "block_hash": data.get("blockHash", data.get("block_hash", "")),
             "confirmations": data.get("confirmations", 0),
             "amount_paid": data.get("amountPaid", data.get("amount_paid", "")),
+            "reason": ""
+            if success
+            else (
+                data.get("error", data.get("reason", "facilitator returned no settlement signal"))
+            ),
             "receipt": data,
         }
 
