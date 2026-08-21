@@ -264,6 +264,11 @@ def create_app(*args: Any, **kwargs: Any) -> Any:
 
     app.include_router(register_bazaar_router())
 
+    # Settlement observability: metrics + ledger snapshot.
+    from app.domain.x402.observability import register_metrics_router
+
+    app.include_router(register_metrics_router())
+
     app.add_middleware(
         X402Middleware,
         free_paths=set(cfg.free_paths),

@@ -217,7 +217,13 @@ class FacilitatorRouter:
             return result
 
         # External facilitator path.
-        return await verify_external(self, payment_id, tx_hash, network_id, asset, amount_usd)
+        verified_result = await verify_external(
+            self, payment_id, tx_hash, network_id, asset, amount_usd
+        )
+        from app.domain.x402.observability import observe_verify
+
+        observe_verify(verified_result, payment_id=payment_id, tx_hash=tx_hash)
+        return verified_result
 
     async def _verify_self_hosted(
         self,
@@ -409,7 +415,13 @@ class FacilitatorRouter:
                     response.raise_for_status()
                     data = response.json()
                     self._mark_success(config)
-                    return normalize_settlement(data, payment_id, tx_hash, network_id, config.name)
+                    settled = normalize_settlement(
+                        data, payment_id, tx_hash, network_id, config.name
+                    )
+                    from app.domain.x402.observability import observe_settle
+
+                    observe_settle(settled, payment_id=payment_id, tx_hash=tx_hash)
+                    return settled
                 except httpx.HTTPStatusError as e:
                     last_error = f"{config.name}: HTTP {e.response.status_code}"
                     self._mark_failure(config)
