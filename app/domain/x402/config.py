@@ -112,7 +112,9 @@ class X402Settings(BaseModel):
 
     #: Path prefixes exempt from the 402 gate (payment protocol + meta routes).
     #: ``/v1/x402`` covers ``/v1/x402/{payment,verify,settle,health}``.
-    free_paths: frozenset[str] = frozenset({"/v1/x402", "/health", "/docs", "/openapi", "/version"})
+    free_paths: frozenset[str] = frozenset(
+        {"/v1/x402", "/health", "/docs", "/openapi", "/version", "/dashboard"}
+    )
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "X402Settings":
