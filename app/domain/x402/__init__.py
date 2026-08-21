@@ -5,6 +5,7 @@ T34 from v4.0. Sovereign-first x402 payment layer for AI agents.
 Re-exports the legacy models (PaymentFacilitator, X402Tier) for backward
 compatibility with v1 routers that import from app.domain.x402.
 """
+
 from __future__ import annotations
 
 from app.core import health as health_mod
@@ -12,13 +13,15 @@ from app.core.health import DomainHealth
 
 
 async def _health_check() -> DomainHealth:
-    """x402 health: catalog + middleware available."""
+    """x402 health: verifier store + middleware available."""
     try:
-        from app.domain.x402.middleware import PRICING
+        from app.domain.x402.middleware import get_default_store
+
+        get_default_store()
         return DomainHealth(
             name="x402",
             healthy=True,
-            details={"tools": len(PRICING), "middleware": "available"},
+            details={"store": "available", "middleware": "available"},
         )
     except Exception as e:
         return DomainHealth(name="x402", healthy=False, error=str(e))

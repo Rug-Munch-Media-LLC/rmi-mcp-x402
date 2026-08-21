@@ -1,572 +1,506 @@
-"""T34 x402 Payment Middleware.
+"""x402 payment middleware — spec-compliant HTTP 402 gating.
 
-Per v4.0 §T34. HTTP 402 'Payment Required' repurposed for AI agents.
+Implements the OFFICIAL x402 402-flow per the repo's X402-SPEC-CONTRACT §2 and
+the HTTP transport specs (``docs/x402-official-spec/transports-v1__http.md`` /
+``transports-v2__http.md``):
 
-Flow:
-  1. Agent calls paid endpoint without X-Payment header
-  2. Server returns 402 with payment challenge (signed invoice)
-  3. Agent's wallet pays on-chain, gets tx_hash
-  4. Agent re-calls with X-Payment: <base64(tx_hash + signature)>
-  5. Server verifies on-chain payment via web3, fulfills request
+- Unpaid requests for a gated path receive::
 
-Pricing (per v4.0):
-  Free:   5 calls/day
-  Pro:    $0.01/call (1000 calls/day)
-  Ent:    $0.001/call (unlimited)
+      HTTP/1.1 402 Payment Required
+      Content-Type: application/json
+      PAYMENT-REQUIRED: <base64(JSON body)>
+      X-Payment-Required: true
+      X-Payment-Options: x402
 
-For v1, we use a simplified flow:
-  - Track calls per agent in Redis (sliding window)
-  - Receipts logged to x402_receipts table
-  - Payment verification via JSON-RPC eth_getTransactionReceipt
-    with multi-endpoint fallback across base/ethereum/arbitrum
-  - The 402 challenge includes a payment_url the agent hits
+  and a JSON body ``{x402Version: 1, accepts: [...]}`` built via the mirrored
+  canonical ``build_payment_required`` / ``build_multi_asset_accepts``
+  (multi-asset, CAIP-2 network ids, atomic ``maxAmountRequired``, configured
+  ``payToAddress`` — NOT a hardcoded placeholder).
+
+- After paying via a facilitator, the client replays with ``X-Payment-ID``;
+  the id is checked against a caller-bound (client IP), TTL'd store (mirrors
+  the canonical ``X402Handler`` semantics — ``PAYMENT_VALIDITY_SECONDS``).
+
+- ``free_paths`` subsets (``/health``, ``/docs``) pass through.
+
+NOTE on the canonical reference: the local ``x402-py`` reference is NOT
+vendored into this repo's dependency set (see ``pyproject.toml``), and the
+installed PyPI ``x402`` (v2.14.0) exposes a different API. Per the conformance
+contract these helpers MIRROR the ``x402-py`` canonical implementations exactly
+so the emitted wire format is byte-for-byte the spec shape.
 """
 
 from __future__ import annotations
 
 import base64
-import hashlib
+import functools
+import inspect
 import json
 import logging
 import os
-from datetime import UTC, datetime
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import uuid4
 
-import httpx
-from fastapi import HTTPException, Request
+from fastapi import Request
+from fastapi.responses import JSONResponse
 
 log = logging.getLogger(__name__)
 
+# ── Spec headers on the 402 response ────────────────────────────────────────
+HEADER_PAYMENT_REQUIRED = "PAYMENT-REQUIRED"
+HEADER_X_PAYMENT_REQUIRED = "X-Payment-Required"
+HEADER_X_PAYMENT_OPTIONS = "X-Payment-Options"
+HEADER_CONTENT_TYPE = "Content-Type"
+# Replay header a paid client presents on subsequent requests.
+HEADER_X_PAYMENT_ID = "X-Payment-ID"
 
-# ── On-chain payment config ────────────────────────────────────────
-# Payment address (env configurable, matches x402_checkout.py default)
-PAY_TO = os.getenv("X402_PAY_TO", "0x1E3AC01d0fdb976179790BDD02823196A92705C9").lower()
+# TTL for verified payment ids (mirrors x402-py PAYMENT_VALIDITY_SECONDS).
+PAYMENT_VALIDITY_SECONDS: int = int(os.getenv("X402_PAYMENT_TTL", "3600"))
 
-# ERC-20 Transfer event: keccak256("Transfer(address,address,uint256)")
-TRANSFER_EVENT_TOPIC0 = (
-    "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-)
+# x402 version this implementation emits.
+X402_VERSION = 1
 
-USDC_DECIMALS = 6
-USDC_ATOMS_PER_DOLLAR = 10**USDC_DECIMALS  # 1 USDC = 1_000_000 atoms
-
-USDC_ADDRESSES: dict[str, str] = {
-    "ethereum": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    "base": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    "arbitrum": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+# ── Canonical acceptance surface (CAIP-2 ids, per X402-SPEC-CONTRACT §3) ────
+LEGACY_TO_CAIP2: dict[str, str] = {
+    "base": "eip155:8453",
+    "ethereum": "eip155:1",
+    "arbitrum": "eip155:42161",
+    "optimism": "eip155:10",
+    "polygon": "eip155:137",
+    "solana": "solana:mainnet",
+    "tron": "tron:mainnet",
 }
 
-# EVM RPC endpoints for eth_getTransactionReceipt (with fallback)
-EVM_RPC_URLS: dict[str, list[str]] = {
-    "ethereum": [
-        "https://eth.drpc.org",
-        "https://ethereum-rpc.publicnode.com",
-        "https://eth.llamarpc.com",
-    ],
-    "base": [
-        "https://base.drpc.org",
-        "https://base-rpc.publicnode.com",
-        "https://base.llamarpc.com",
-    ],
-    "arbitrum": [
-        "https://arbitrum.drpc.org",
-        "https://arbitrum-one-rpc.publicnode.com",
-        "https://arbitrum.llamarpc.com",
-    ],
+ASSET_DECIMALS: dict[str, int] = {
+    "USDC": 6,
+    "USDT": 6,
+    "DAI": 18,
+    "ETH": 18,
+    "WETH": 18,
+    "ARB": 18,
+    "MATIC": 18,
+    "POL": 18,
+    "SOL": 9,
+    "TRX": 6,
 }
 
-
-# ── Pricing per v4.0 §T34 ───────────────────────────────────────────
-PRICING: dict[str, dict[str, Any]] = {
-    # free_tier: bool, pro_cents: int (USD cents), ent_cents: int
-    "get_token_risk": {
-        "free_tier": True,
-        "pro_cents": 1,
-        "ent_cents": 1,
-        "description": "Real-time token risk score",
-    },
-    "get_wallet_analysis": {
-        "free_tier": True,
-        "pro_cents": 1,
-        "ent_cents": 1,
-        "description": "Wallet activity + reputation",
-    },
-    "get_deployer_reputation": {
-        "free_tier": False,
-        "pro_cents": 2,
-        "ent_cents": 1,
-        "description": "Deployer reputation score",
-    },
-    "get_news_sentiment": {
-        "free_tier": True,
-        "pro_cents": 1,
-        "ent_cents": 1,
-        "description": "Latest news + sentiment",
-    },
-    "generate_report": {
-        "free_tier": False,
-        "pro_cents": 500,
-        "ent_cents": 400,
-        "description": "Full AI research report",
-    },
-    "query_catalog": {
-        "free_tier": False,
-        "pro_cents": 5,
-        "ent_cents": 3,
-        "description": "Natural language catalog query",
-    },
-    "find_similar_tokens": {
-        "free_tier": False,
-        "pro_cents": 3,
-        "ent_cents": 2,
-        "description": "Vector-similar tokens",
-    },
-    "resolve_entity": {
-        "free_tier": False,
-        "pro_cents": 10,
-        "ent_cents": 5,
-        "description": "Cross-chain entity resolution",
-    },
-    "search_rag": {
-        "free_tier": True,
-        "pro_cents": 1,
-        "ent_cents": 1,
-        "description": "RAG semantic search",
-    },
-    "bulk_ingest": {
-        "free_tier": False,
-        "pro_cents": 10,
-        "ent_cents": 5,
-        "description": "Bulk RAG ingestion",
-    },
+# Which assets each CAIP-2 network accepts for payment.
+NETWORK_ASSETS: dict[str, list[str]] = {
+    "eip155:8453": ["USDC", "USDT", "ETH", "WETH", "DAI"],
+    "eip155:1": ["USDC", "USDT", "ETH", "WETH"],
+    "eip155:42161": ["USDC", "USDT", "ARB", "WETH"],
+    "eip155:10": ["USDC", "USDT", "WETH"],
+    "eip155:137": ["USDC", "USDT", "POL", "MATIC"],
+    "solana:mainnet": ["USDC", "USDT", "SOL"],
+    "tron:mainnet": ["USDC", "USDT", "TRX"],
 }
 
-# Free tier daily limit
-FREE_DAILY_LIMIT = 5
+# Server-authoritative pricing (USD) per operation — NEVER trust the client.
+X402_PRICING: dict[str, dict[str, Any]] = {
+    "api_access": {"price_usd": 0.01, "description": "x402 paid API call"},
+    "get_token_risk": {"price_usd": 0.01, "description": "Token risk score"},
+    "get_wallet_analysis": {"price_usd": 0.01, "description": "Wallet analysis"},
+    "generate_report": {"price_usd": 0.10, "description": "AI research report"},
+}
+
+# ── Verified-payment store (X402Handler-style: caller-bound + TTL) ──────────
+DEFAULT_PRICE_USD = 0.01
 
 
-# ── Nonce burn (replay protection) ──────────────────────────────
-# Per MINIMAX_M3_TASKS.md T02. Each tx_hash can only be used ONCE.
-# We use Redis SETNX (set-if-not-exists) as an atomic nonce burn:
-#   - First call: SETNX returns 1, nonce is burned, request proceeds
-#   - Second call: SETNX returns 0, nonce already burned → 410 Gone
-# TTL is 24h (the x402 invoice expiry window).
-
-X402_NONCE_TTL = 86400  # 24 hours
+def normalize_network_id(network: str) -> str:
+    """Map a legacy network name to its CAIP-2 id (spec §3)."""
+    return LEGACY_TO_CAIP2.get(network.strip().lower(), network.strip())
 
 
-async def _burn_nonce(catalog, tx_hash: str) -> bool:
-    """Atomically burn a payment nonce. Returns True if first use, False if replay.
+def _pay_to_address(caip2: str) -> str:
+    """Resolve the configured receiving wallet for a CAIP-2 network."""
+    family = "solana" if caip2.startswith("solana:") else caip2
+    key = f"X402_WALLET_{family.replace(':', '_').upper()}"
+    return os.getenv(key) or os.getenv("X402_WALLET") or ""
 
-    Uses Redis SETNX (SET key value NX EX seconds). Atomic by construction.
-    Logs replay attempts for monitoring.
+
+def asset_to_atomic(amount_usd: float, asset: str, network: str) -> int:
+    """Convert a USD price to atomic units for ``asset`` on ``network``.
+
+    Stablecoins are USD 1:1 at their fixed decimals. Volatile assets fall back
+    to a static USD-per-unit estimate (a live oracle would refine this; see
+    contract §4). Atomic so float drift can't be exploited server-side.
     """
-    if not catalog or not catalog._health.redis:
-        # Without Redis we cannot prevent replay — fail closed (reject).
-        log.warning(f"x402_nocache_reject: tx_hash={tx_hash[:10]}...")
-        return False
-    key = f"x402:nonce:{tx_hash}"
-    try:
-        # SETNX semantics: return 1 if key was set, 0 if already existed
-        ok = await catalog._redis.set(key, "1", ex=X402_NONCE_TTL, nx=True)
-        if not ok:
-            log.warning(f"x402_replay_attempt: tx_hash={tx_hash[:10]}...")
-            _X402_REPLAY_COUNTER.labels(tool="unknown").inc()
-        return bool(ok)
-    except Exception as e:
-        log.error(f"x402_nonce_burn_fail: {e}")
-        # Fail closed — reject if we can't burn atomically
-        return False
+    decimals = ASSET_DECIMALS.get(asset.upper(), 6)
+    unit = 10**decimals
+    usd_per_unit = _usd_per_unit(asset.upper())
+    if usd_per_unit is None or usd_per_unit <= 0:
+        return int(round(amount_usd * unit))
+    return int(round(amount_usd / usd_per_unit * unit))
 
 
-async def _check_rate_limit(redis_client, agent_id: str) -> bool:
-    """Per-agent sliding window rate limit. Free tier = 5 calls/day."""
-    # (kept as-is from original file, exposed for the require_payment path)
+def _usd_per_unit(asset: str) -> float | None:
+    """Static USD-per-unit for volatile assets; None means USD-pegged."""
+    stable = {"USDC", "USDT", "DAI", "POL", "MATIC", "TRX"}
+    if asset in stable:
+        return 1.0
+    fallback = {"ETH": 3000.0, "WETH": 3000.0, "ARB": 1.0, "SOL": 150.0}
+    return fallback.get(asset)
 
 
-# ── Prometheus counters (lightweight, no external dep) ──────────
-try:
-    from prometheus_client import REGISTRY, Counter
-
-    # Use a module-level registry so multiple imports don't double-register
-    _X402_REGISTRY = REGISTRY
-    _X402_REPLAY_COUNTER = Counter(
-        "x402_replay_attempts_total",
-        "Number of x402 replay attempts blocked by nonce burn",
-        ["tool"],
-        registry=_X402_REGISTRY,
-    )
-    _X402_REVENUE_COUNTER = Counter(
-        "x402_revenue_total_usd_cents",
-        "x402 revenue in USD cents",
-        ["tool", "tier"],
-        registry=_X402_REGISTRY,
-    )
-except Exception:
-    # Prometheus not available — use no-op counter stubs
-    class _Stub:
-        def labels(self, **kw):
-            return self
-
-        def inc(self, n: float = 1.0):
-            pass
-
-    _X402_REPLAY_COUNTER = _Stub()
-    _X402_REVENUE_COUNTER = _Stub()
+def _price_usd(operation: str) -> float:
+    info = X402_PRICING.get(operation) or X402_PRICING.get("api_access")
+    return float((info or {}).get("price_usd", DEFAULT_PRICE_USD))
 
 
-def get_tool_price_usd(tool: str) -> float:
-    """Get pro tier price in USD. Returns 0 for free tools."""
-    p = PRICING.get(tool, {})
-    if p.get("free_tier", False):
-        return 0.0
-    return p.get("pro_cents", 0) / 100.0
-
-
-def get_tool_metadata(tool: str) -> dict:
-    """Public-facing tool metadata for /api/v1/x402/catalog."""
-    p = PRICING.get(tool, {})
+def _option(
+    *,
+    operation: str,
+    resource: str,
+    description: str,
+    caip2: str,
+    asset: str,
+) -> dict[str, Any]:
+    """One ``accepts[]`` entry (exact scheme, atomic amount, CAIP-2 id)."""
     return {
-        "name": tool,
-        "free_tier": p.get("free_tier", False),
-        "free_daily_limit": FREE_DAILY_LIMIT if p.get("free_tier") else 0,
-        "price_pro_usd": p.get("pro_cents", 0) / 100.0,
-        "price_ent_usd": p.get("ent_cents", 0) / 100.0,
-        "description": p.get("description", ""),
+        "scheme": "exact",
+        "network": caip2,
+        "maxAmountRequired": str(asset_to_atomic(_price_usd(operation), asset, caip2)),
+        "resource": resource,
+        "description": description,
+        "mimeType": "application/json",
+        "payToAddress": _pay_to_address(caip2),
+        "asset": asset.upper(),
+        "extra": {"name": asset.upper(), "version": "2", "operation": operation},
     }
 
 
-# ── Rate limit tracking (Redis) ───────────────────────────────────
-def _agent_id_from_request(request: Request | None) -> str:
-    """Extract agent id from headers. Defaults to 'anon:ip' for anonymous."""
-    if not request:
-        return "anon:unknown"
-    agent_id = request.headers.get("X-Agent-Id") or request.headers.get("X-Api-Key")
-    if agent_id:
-        return f"key:{agent_id}"
-    client = request.client
-    if client:
-        return f"anon:{client.host}"
-    return "anon:unknown"
-
-
-async def _check_rate_limit(redis, agent_id: str) -> None:
-    """Sliding-window rate limit: 5 free calls/day, 1000 pro, unlimited ent.
-
-    For v1, we use Redis with a daily counter. Per-second limits are
-    enforced at the proxy level (nginx/Caddy).
-    """
-    if not redis:
-        return
-    try:
-        day = datetime.now(UTC).strftime("%Y%m%d")
-        key = f"x402:rl:{agent_id}:{day}"
-        count = await redis.incr(key)
-        if count == 1:
-            await redis.expire(key, 86400)
-        if count > FREE_DAILY_LIMIT:
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "error": "rate_limit_exceeded",
-                    "agent_id": agent_id,
-                    "daily_count": count,
-                    "limit": FREE_DAILY_LIMIT,
-                    "next_action": "Send X-Payment header with valid tx_hash to upgrade tier",
-                },
+def build_multi_asset_accepts(
+    operation: str,
+    resource: str = "",
+    description: str = "",
+) -> list[dict[str, Any]]:
+    """Multi-asset ``accepts[]`` covering every quotable (network, asset)."""
+    if not description:
+        info = X402_PRICING.get(operation) or X402_PRICING.get("api_access")
+        description = str((info or {}).get("description") or operation or "api_access")
+    accepts: list[dict[str, Any]] = []
+    for caip2, assets in NETWORK_ASSETS.items():
+        for asset in assets:
+            if _pay_to_address(caip2):
+                # Only advertise networks we have a receiving wallet for.
+                accepts.append(
+                    _option(
+                        operation=operation,
+                        resource=resource,
+                        description=description,
+                        caip2=caip2,
+                        asset=asset,
+                    )
+                )
+    if not accepts:
+        base = normalize_network_id("base")
+        accepts.append(
+            _option(
+                operation=operation,
+                resource=resource,
+                description=description,
+                caip2=base,
+                asset="USDC",
             )
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.warning(f"rate_limit_check_fail: {e}")
+        )
+    return accepts
 
 
-# ── Payment challenge ─────────────────────────────────────────────
-def create_invoice(tool: str, agent_id: str) -> dict:
-    """Create a payment challenge (signed invoice) for an agent to pay.
+def build_payment_required(
+    operation: str,
+    resource: str = "",
+    multi_asset: bool = True,
+) -> dict[str, Any]:
+    """Build the spec-compliant ``{x402Version:1, accepts:[...]}`` body."""
+    accepts = build_multi_asset_accepts(operation, resource=resource)
+    body: dict[str, Any] = {"x402Version": X402_VERSION, "accepts": accepts}
+    if multi_asset:
+        # Additive multi-chain surface so agents see every network/asset.
+        body["networks"] = [
+            {"id": caip2, "assets": assets} for caip2, assets in NETWORK_ASSETS.items()
+        ]
+        body["supported_assets"] = [
+            {"network": caip2, "asset": asset}
+            for caip2, assets in NETWORK_ASSETS.items()
+            for asset in assets
+        ]
+    return body
 
-    In v1, the signature is a HMAC placeholder. In production, the
-    invoice is signed by the platform's key and the agent verifies it
-    before paying.
-    """
-    invoice_id = uuid4().hex
-    amount_usd = get_tool_price_usd(tool)
-    invoice = {
-        "id": invoice_id,
-        "tool": tool,
-        "agent_id": agent_id,
-        "amount_usd": amount_usd,
-        "amount_wei": int(amount_usd * 1e18 / 3000),  # assume ETH = $3000
-        "pay_to": "0xRMI_PLATFORM_WALLET",  # placeholder
-        "chain": "base",  # L2 for low fees
-        "created_at": datetime.now(UTC).isoformat(),
-        "expires_at": (datetime.now(UTC).timestamp() + 3600),
+
+def _encode_payment_required_body(body: dict[str, Any]) -> str:
+    """Base64-encode the PaymentRequired body (canonical wire format)."""
+    return base64.b64encode(json.dumps(body).encode("utf-8")).decode("ascii")
+
+
+def payment_required_body(resource: str = "", operation: str = "api_access") -> dict[str, Any]:
+    """The spec body for a generic 402 challenge."""
+    return build_payment_required(operation or "api_access", resource=resource, multi_asset=True)
+
+
+def payment_required_headers(body: dict[str, Any]) -> dict[str, str]:
+    """Spec header set for a 402 response carrying ``body``."""
+    return {
+        HEADER_PAYMENT_REQUIRED: _encode_payment_required_body(body),
+        HEADER_X_PAYMENT_REQUIRED: "true",
+        HEADER_X_PAYMENT_OPTIONS: "x402",
     }
-    # HMAC placeholder signature (real impl: sign with platform key)
-    msg = json.dumps(invoice, sort_keys=True).encode()
-    invoice["signature"] = base64.b64encode(
-        hashlib.sha256(msg + b"RMI_PLATFORM_HMAC_KEY").digest()
-    ).decode()
-    return invoice
 
 
-def verify_payment_header(
-    x_payment: str, expected_amount_usd: float
-) -> tuple[str, str] | None:
-    """Decode the X-Payment header. Returns (tx_hash, signature) or None.
+def is_free_path(path: str, free_paths: set[str]) -> bool:
+    """Prefix match: ``/v1/health`` also frees ``/v1/health/details``."""
+    return any(path.startswith(prefix) for prefix in free_paths)
 
-    Format: base64({"tx_hash": "...", "signature": "..."})
+
+class PaymentStore:
+    """In-memory verified-payment store, caller-bound + TTL'd.
+
+    Mirrors the canonical ``X402Handler`` replay contract:
+
+    - ``is_paid(payment_id, caller_key)`` is True only when the id was verified,
+      has not exceeded ``PAYMENT_VALIDITY_SECONDS``, and — when it was recorded
+      with a caller key — the replaying caller matches it.
+    - A record without an ``expires_at`` (pre-hardening) fails closed.
     """
-    if not x_payment:
-        return None
-    try:
-        decoded = base64.b64decode(x_payment).decode()
-        data = json.loads(decoded)
-        return data.get("tx_hash", ""), data.get("signature", "")
-    except Exception:
-        return None
+
+    def __init__(self, *, validity_seconds: int = PAYMENT_VALIDITY_SECONDS) -> None:
+        self.validity_seconds = validity_seconds
+        self._records: dict[str, dict[str, Any]] = {}
+
+    def record(
+        self,
+        *,
+        payment_id: str,
+        caller_key: str = "",
+        tx_hash: str = "",
+        network: str = "",
+        asset: str = "",
+        amount_usd: float = 0.0,
+        facilitator: str = "",
+        verified: bool = True,
+    ) -> None:
+        """Record a verified payment id bound to ``caller_key`` for the TTL."""
+        self._records[payment_id] = {
+            "payment_id": payment_id,
+            "tx_hash": tx_hash,
+            "network": network,
+            "asset": asset,
+            "amount_usd": amount_usd,
+            "facilitator": facilitator,
+            "verified": verified,
+            "caller_key": caller_key or "",
+            "expires_at": (
+                datetime.now(UTC) + timedelta(seconds=self.validity_seconds)
+            ).isoformat(),
+            "verified_at": datetime.now(UTC).isoformat(),
+        }
+
+    def is_paid(self, payment_id: str, caller_key: str = "") -> bool:
+        """True when the id is verified, unexpired and caller-bound."""
+        if not payment_id:
+            return False
+        rec = self._records.get(payment_id)
+        if rec is None or not rec.get("verified"):
+            return False
+        expires_at = rec.get("expires_at")
+        if not expires_at:
+            return False  # no expiry → fail closed
+        try:
+            if datetime.fromisoformat(expires_at) <= datetime.now(UTC):
+                return False
+        except ValueError:
+            return False
+        stored_caller = rec.get("caller_key") or ""
+        if stored_caller and (not caller_key or stored_caller != caller_key):
+            return False
+        return True
+
+    def get(self, payment_id: str) -> dict[str, Any] | None:
+        return self._records.get(payment_id)
+
+    def __len__(self) -> int:
+        return len(self._records)
 
 
-async def _fetch_receipt_via_rpc(tx_hash: str, rpc_urls: list[str]) -> dict | None:
-    """Fetch transaction receipt via JSON-RPC eth_getTransactionReceipt.
+_default_store: PaymentStore | None = None
 
-    Tries each URL in order (rate-limit 429 → skip, error → skip).
-    Returns the receipt dict on first success, None if all fail.
+
+def get_default_store() -> PaymentStore:
+    """Return (creating once) the process-wide verified-payment store."""
+    global _default_store
+    if _default_store is None:
+        _default_store = PaymentStore()
+    return _default_store
+
+
+def set_default_store(store: PaymentStore | None) -> None:
+    """Override (or clear, with ``None``) the process-wide payment store."""
+    global _default_store
+    _default_store = store
+
+
+# ASGI structural types (framework-agnostic).
+Scope = dict[str, Any]
+Message = dict[str, Any]
+Receive = Callable[[], Awaitable[Message]]
+Send = Callable[[Message], Awaitable[None]]
+ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
+
+
+def caller_key_from_scope(scope: Scope) -> str:
+    """Best-effort caller identity (client IP) from an ASGI scope."""
+    client = scope.get("client")
+    if isinstance(client, tuple | list) and client:
+        return str(client[0])
+    return ""
+
+
+def caller_key_from_request(request: Request | None) -> str:
+    """Best-effort caller identity for FastAPI route handlers."""
+    if request is not None and request.client is not None and request.client.host:
+        return str(request.client.host)
+    return ""
+
+
+class X402Middleware:
+    """ASGI middleware gating routes behind x402 payments.
+
+    Use with FastAPI / Starlette::
+
+        app.add_middleware(X402Middleware, free_paths={"/health", "/docs"})
+
+    Requests whose path starts with any ``free_paths`` entry pass through.
+    Every other request must present a verified ``X-Payment-ID`` header;
+    unpaid requests get HTTP 402 with the spec header set + JSON body.
     """
-    body = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "eth_getTransactionReceipt",
-        "params": [tx_hash],
-    }
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        for url in rpc_urls:
-            try:
-                resp = await client.post(url, json=body)
-                if resp.status_code == 429:
-                    continue  # rate limited, try next endpoint
-                data = resp.json()
-                if data.get("error"):
-                    continue
-                result = data.get("result")
-                if result:
-                    return result
-            except Exception:
-                continue
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        free_paths: set[str] | None = None,
+        store: PaymentStore | None = None,
+    ) -> None:
+        self.app = app
+        self.free_paths: set[str] = set(free_paths or set())
+        self.store = store or get_default_store()
+
+    def _is_free(self, path: str) -> bool:
+        return is_free_path(path, self.free_paths)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        path = str(scope.get("path", ""))
+        if self._is_free(path):
+            await self.app(scope, receive, send)
+            return
+        raw_headers = scope.get("headers") or []
+        headers = {
+            str(name.decode("latin-1")).lower(): str(value.decode("latin-1"))
+            for name, value in raw_headers
+        }
+        caller_key = caller_key_from_scope(scope)
+        payment_id = headers.get(HEADER_X_PAYMENT_ID.lower(), "")
+        if self.store.is_paid(payment_id, caller_key=caller_key):
+            await self.app(scope, receive, send)
+            return
+        body = payment_required_body(resource=path)
+        response_headers = payment_required_headers(body)
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 402,
+                "headers": [
+                    (HEADER_CONTENT_TYPE.encode("latin-1"), b"application/json"),
+                    *[
+                        (str(k).lower().encode("latin-1"), str(v).encode("latin-1"))
+                        for k, v in response_headers.items()
+                    ],
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": json.dumps(body).encode()})
+
+
+def _is_paid_for(request: Request, store: PaymentStore) -> bool:
+    """True when the request carries a verified, caller-bound payment id."""
+    payment_id = request.headers.get(HEADER_X_PAYMENT_ID.lower(), "")
+    return store.is_paid(payment_id, caller_key=caller_key_from_request(request))
+
+
+def require_payment(
+    *,
+    store: PaymentStore | None = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Decorator: gate a FastAPI route handler behind an x402 payment.
+
+    Paid requests (valid ``X-Payment-ID``) pass through; unpaid requests get a
+    spec-compliant ``JSONResponse(status_code=402)`` with the full header set.
+    """
+
+    def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+        def _gate(args: tuple[Any, ...], kwargs: dict[str, Any]) -> bool | JSONResponse:
+            active_store = store or get_default_store()
+            request = _find_request(args, kwargs)
+            if request is not None and _is_paid_for(request, active_store):
+                return True
+            body = payment_required_body()
+            return JSONResponse(
+                status_code=402, content=body, headers=payment_required_headers(body)
+            )
+
+        if inspect.iscoroutinefunction(fn):
+
+            @functools.wraps(fn)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                result = _gate(args, kwargs)
+                if result is True:
+                    return await fn(*args, **kwargs)
+                return result
+
+            return async_wrapper
+
+        @functools.wraps(fn)
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+            result = _gate(args, kwargs)
+            if result is True:
+                return fn(*args, **kwargs)
+            return result
+
+        return sync_wrapper
+
+    return decorator
+
+
+def _find_request(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Request | None:
+    """Locate a FastAPI/Starlette ``Request`` among handler args."""
+    for candidate in (*args, *kwargs.values()):
+        if isinstance(candidate, Request):
+            return candidate
     return None
 
 
-async def verify_payment_on_chain(tx_hash: str, expected_amount_usd: float) -> bool:
-    """Verify an on-chain USDC payment.
-
-    Strategy:
-      1. Validate tx_hash format
-      2. Fetch transaction receipt via JSON-RPC (with multi-endpoint fallback)
-      3. Verify tx status = success
-      4. Find ERC-20 Transfer event to PAY_TO from the USDC contract
-      5. Verify the transferred amount matches expected_amount_usd
-      6. Return True only when ALL checks pass (with detailed logging)
-
-    Tries chains in order: base (default per invoice), ethereum, arbitrum.
-    """
-    if not tx_hash or not tx_hash.startswith("0x") or len(tx_hash) != 66:
-        log.warning(f"x402_bad_hash: {str(tx_hash)[:20] if tx_hash else 'None'}...")
-        return False
-
-    expected_atoms = str(int(expected_amount_usd * USDC_ATOMS_PER_DOLLAR))
-    our_address = PAY_TO.lower()
-
-    # Try chains in priority order (base is the invoice default)
-    for chain in ("base", "ethereum", "arbitrum"):
-        rpc_urls = EVM_RPC_URLS.get(chain)
-        usdc_address = USDC_ADDRESSES.get(chain)
-        if not rpc_urls or not usdc_address:
-            continue
-
-        receipt = await _fetch_receipt_via_rpc(tx_hash, rpc_urls)
-        if not receipt:
-            continue
-
-        # ── Verify transaction succeeded ──
-        status = receipt.get("status")
-        if status is not None:
-            status_str = str(status).lower()
-            if status_str not in ("ok", "1", "0x1"):
-                log.warning(
-                    f"x402_tx_failed: tx={tx_hash[:16]}... chain={chain} status={status}"
-                )
-                return False
-
-        # ── Scan logs for USDC Transfer to PAY_TO ──
-        logs = receipt.get("logs", [])
-        usdc_address = usdc_address.lower()
-
-        for log_entry in logs:
-            topics = log_entry.get("topics", [])
-            if len(topics) < 3:
-                continue
-            if topics[0].lower() != TRANSFER_EVENT_TOPIC0:
-                continue
-
-            log_address = (log_entry.get("address") or "").lower()
-            if log_address != usdc_address:
-                continue
-
-            # Decode 'to' from topic2 (address padded to 32 bytes)
-            try:
-                to_address = "0x" + topics[2][-40:].lower()
-            except (IndexError, ValueError):
-                continue
-
-            if to_address != our_address:
-                continue
-
-            # ── Decode amount from data (uint256) ──
-            log_data = log_entry.get("data", "0x")
-            try:
-                if log_data and log_data.startswith("0x") and len(log_data) >= 66:
-                    actual_amount = str(int(log_data[:66], 16))
-                elif log_data and log_data != "0x":
-                    actual_amount = str(int(log_data, 16))
-                else:
-                    continue
-            except (ValueError, TypeError):
-                continue
-
-            # ── Check amount matches ──
-            if actual_amount == expected_atoms:
-                log.info(
-                    f"x402_paid: tx={tx_hash[:16]}... chain={chain} "
-                    f"${expected_amount_usd} USDC → {our_address[:10]}..."
-                )
-                return True
-
-            log.warning(
-                f"x402_amount_mismatch: tx={tx_hash[:16]}... chain={chain} "
-                f"expected={expected_atoms} got={actual_amount} atoms"
-            )
-            return False
-
-        # Receipt found & logs scanned but no matching Transfer → payment not to us
-        log.warning(
-            f"x402_no_transfer: tx={tx_hash[:16]}... chain={chain} "
-            f"expected USDC={usdc_address[:10]}... → {our_address[:10]}..."
-        )
-        return False
-
-    log.warning(
-        f"x402_no_receipt: tx={tx_hash[:16]}... tried chains=base, ethereum, arbitrum"
-    )
-    return False
-
-
-async def record_receipt(
-    catalog, tx_hash: str, tool: str, agent_id: str, amount_usd: float
-) -> bool:
-    """Log the payment receipt to x402_receipts table."""
-    if not catalog._health.postgres:
-        return False
-    try:
-        async with catalog._pg_pool.acquire() as conn:
-            await conn.execute(
-                """INSERT INTO x402_receipts (tx_hash, agent_id, tool, amount_usd, chain, paid_at, tier)
-                   VALUES ($1, $2, $3, $4, $5, NOW(), $6)
-                   ON CONFLICT (tx_hash) DO NOTHING""",
-                tx_hash,
-                agent_id,
-                tool,
-                amount_usd,
-                "base",
-                "pro",
-            )
-        return True
-    except Exception as e:
-        log.warning(f"receipt_record_fail: {e}")
-        return False
-
-
-# ── Main middleware ────────────────────────────────────────────────
-async def require_payment(
-    tool: str,
-    request: Request | None = None,
-    catalog=None,
-) -> dict:
-    """Verify x402 payment. Returns payment context dict.
-
-    Raises HTTPException 402 if payment is required but not provided.
-    Raises HTTPException 429 if rate limit is exceeded.
-    """
-    agent_id = _agent_id_from_request(request)
-    if not catalog or not catalog._health.redis:
-        # No rate limiting available — log and pass
-        log.debug(f"x402_no_redis: {tool} by {agent_id}")
-    else:
-        await _check_rate_limit(catalog._redis, agent_id)
-
-    # Free tool — no payment required
-    if get_tool_price_usd(tool) == 0:
-        return {
-            "agent_id": agent_id,
-            "tool": tool,
-            "tier": "free",
-            "paid_via_x402": None,
-        }
-
-    # Paid tool — check X-Payment header
-    if request is None:
-        invoice = create_invoice(tool, agent_id)
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "payment_required",
-                "invoice": invoice,
-                "payment_url": f"https://pay.rugmunch.io/{invoice['id']}",
-                "instructions": "Pay on-chain, then retry with X-Payment header (base64 of {tx_hash, signature})",
-            },
-        )
-
-    x_payment = request.headers.get("X-Payment")
-    if not x_payment:
-        invoice = create_invoice(tool, agent_id)
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "payment_required",
-                "invoice": invoice,
-                "payment_url": f"https://pay.rugmunch.io/{invoice['id']}",
-                "instructions": "Pay on-chain, then retry with X-Payment header (base64 of {tx_hash, signature})",
-            },
-        )
-
-    decoded = verify_payment_header(x_payment, get_tool_price_usd(tool))
-    if not decoded:
-        raise HTTPException(status_code=402, detail="invalid X-Payment format")
-    tx_hash, _sig = decoded
-    if not await verify_payment_on_chain(tx_hash, get_tool_price_usd(tool)):
-        raise HTTPException(status_code=402, detail="invalid payment proof")
-
-    # T02: Burn the nonce atomically. Same tx_hash cannot be used twice.
-    if not await _burn_nonce(catalog, tx_hash):
-        raise HTTPException(
-            status_code=410,
-            detail={
-                "error": "payment_already_used",
-                "tx_hash": tx_hash,
-                "message": "This payment receipt has already been used. Each tx_hash can only be used once.",
-            },
-        )
-    _X402_REVENUE_COUNTER.labels(tool=tool, tier="pro").inc(
-        int(get_tool_price_usd(tool) * 100)
-    )
-
-    # Record the receipt
-    if catalog:
-        await record_receipt(catalog, tx_hash, tool, agent_id, get_tool_price_usd(tool))
-
-    return {
-        "agent_id": agent_id,
-        "tool": tool,
-        "tier": "pro",
-        "paid_via_x402": tx_hash,
-    }
+__all__ = [
+    "ASGIApp",
+    "HEADER_PAYMENT_REQUIRED",
+    "HEADER_X_PAYMENT_ID",
+    "HEADER_X_PAYMENT_OPTIONS",
+    "HEADER_X_PAYMENT_REQUIRED",
+    "PAYMENT_VALIDITY_SECONDS",
+    "PaymentStore",
+    "X402Middleware",
+    "asset_to_atomic",
+    "build_multi_asset_accepts",
+    "build_payment_required",
+    "caller_key_from_request",
+    "get_default_store",
+    "is_free_path",
+    "normalize_network_id",
+    "payment_required_body",
+    "payment_required_headers",
+    "require_payment",
+    "set_default_store",
+]
