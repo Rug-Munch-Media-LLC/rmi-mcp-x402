@@ -90,6 +90,11 @@ SUPPORTED_NETWORKS: list[dict[str, str]] = [
     {"network": "eip155:137", "name": "Polygon", "family": "evm", "chain": "eip155"},
     {"network": "solana:mainnet", "name": "Solana", "family": "solana", "chain": "solana"},
     {"network": "tron:mainnet", "name": "TRON", "family": "tron", "chain": "tron"},
+    # Testnets (W5 testnet-first onboarding): dev goes zero -> first paid 200
+    # without funding mainnet. Circle deploys canonical testnet USDC at fixed
+    # addresses; verification reuses the live EVM paths (EIP-3009/EIP-7702).
+    {"network": "eip155:84532", "name": "Base Sepolia", "family": "evm", "chain": "eip155"},
+    {"network": "eip155:11155111", "name": "Ethereum Sepolia", "family": "evm", "chain": "eip155"},
 ]
 
 
@@ -296,6 +301,28 @@ SUPPORTED_ASSETS: dict[str, dict[str, dict[str, Any]]] = {
             "spl",
         ),
         "SOL": _entry("SOL", "solana:mainnet", "Solana SOL", "", 9, "native", "native"),
+    },
+    "eip155:84532": {
+        "USDC": _entry(
+            "USDC",
+            "eip155:84532",
+            "Base Sepolia USDC",
+            "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+            6,
+            "eip3009",
+            "erc20",
+        ),
+    },
+    "eip155:11155111": {
+        "USDC": _entry(
+            "USDC",
+            "eip155:11155111",
+            "Ethereum Sepolia USDC",
+            "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+            6,
+            "eip3009",
+            "erc20",
+        ),
     },
     "tron:mainnet": {
         "USDT": _entry(

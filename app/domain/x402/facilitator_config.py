@@ -18,6 +18,8 @@ X402_NETWORK_WALLETS = {
     "eip155:42161": os.getenv("X402_WALLET_ARBITRUM", X402_WALLET),
     "eip155:10": os.getenv("X402_WALLET_OPTIMISM", X402_WALLET),
     "eip155:137": os.getenv("X402_WALLET_POLYGON", X402_WALLET),
+    "eip155:84532": os.getenv("X402_WALLET_BASE_SEPOLIA", X402_WALLET),
+    "eip155:11155111": os.getenv("X402_WALLET_ETH_SEPOLIA", X402_WALLET),
     "solana:mainnet": os.getenv("X402_WALLET_SOLANA", ""),
     "tron:mainnet": os.getenv("X402_WALLET_TRON", ""),
 }
