@@ -28,6 +28,9 @@ def check_trial(tool_id: str, client_id: str, max_trials: int | None = None) -> 
         return False, 0
     if max_trials is None:
         max_trials = TOOL_PRICES.get(tool_id, {}).get("trial_free", 3)
+    if not isinstance(max_trials, int) or max_trials < 1:
+        # Defensive: pricing table could carry a non-int/null trial_free.
+        max_trials = 3
     r = get_redis()
     if not r:
         return True, max_trials  # Redis down → fail open (don't block)
@@ -48,25 +51,6 @@ def check_trial(tool_id: str, client_id: str, max_trials: int | None = None) -> 
 
 
 logger = logging.getLogger("x402_enforcement_v2")
-
-# ── Discovery endpoint cache ──
-_discovery_cache: dict | None = None
-_discovery_cache_time: float = 0
-DISCOVERY_CACHE_TTL = 300  # 5 minutes
-
-# Security headers for all x402 responses
-SECURITY_HEADERS = {
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-    "X-XSS-Protection": "1; mode=block",
-    "Cache-Control": "no-store",
-}
-
-# ── x402 SDK Verifier (lazy init) ──
-VERIFIER = None  # Kept for backward compat — always None now
-_FACILITATOR_CONFIGS = None
-_TOKEN_METADATA = None
-_verifier_loaded = False
 
 
 def _record_refundable_payment(

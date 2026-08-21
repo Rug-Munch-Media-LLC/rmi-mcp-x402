@@ -17,7 +17,7 @@ Uses official x402 SDK for ALL cryptographic operations:
 
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger("x402_verifier")
 
@@ -29,6 +29,7 @@ try:
     from x402 import X402_VERSION
     from x402.http import FacilitatorConfig, HTTPFacilitatorClient
     from x402.mechanisms.evm.exact import ExactEvmServerScheme
+    from x402.schemas.payments import PaymentPayload, PaymentRequirements
     from x402.server import x402ResourceServer
 
     SDK_VERSION = X402_VERSION
@@ -141,8 +142,8 @@ class VerifierClient:
             # 4. Network validation
             # 5. Facilitator communication
             result = await self.server.verify_payment(
-                payload,
-                requirements=requirements,
+                cast(PaymentPayload, payload),
+                requirements=cast(PaymentRequirements, requirements),
             )
 
             if result and getattr(result, "verified", False):
@@ -220,7 +221,10 @@ class VerifierClient:
 
         try:
             requirements = self._build_requirements(payload)
-            result = await self.server.settle_payment(payload, requirements=requirements)
+            result = await self.server.settle_payment(
+                cast(PaymentPayload, payload),
+                cast(PaymentRequirements, requirements),
+            )
             return {
                 "settled": True,
                 "tx_hash": getattr(result, "tx_hash", None),

@@ -255,7 +255,6 @@ async def transparency_dashboard(hours: int = 24):
         total_revenue = 0.0
         tool_counts: dict[str, int] = {}
         network_counts: dict[str, int] = {}
-        [0] * hours
 
         for rid in recent_ids:
             rid_str = rid.decode() if isinstance(rid, bytes) else rid

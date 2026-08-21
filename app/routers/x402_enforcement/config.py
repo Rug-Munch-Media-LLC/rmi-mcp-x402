@@ -6,17 +6,12 @@ Hoists the module-level state that multiple enforcement modules reference so the
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any
-
-logger = logging.getLogger("x402_enforcement")
 
 # Trial tracking
 TRIAL_REDIS_PREFIX = "x402:trial:"
 TRIAL_WINDOW_SECONDS = 86400  # 24h rolling window
-
-logger2 = logging.getLogger("x402_enforcement_v2")
 
 # Discovery endpoint cache
 _discovery_cache: dict | None = None
@@ -32,26 +27,6 @@ SECURITY_HEADERS = {
 
 # x402 SDK Verifier (lazy init)
 VERIFIER = None  # kept for backward compat — always None now
-_FACILITATOR_CONFIGS = None
-_TOKEN_METADATA = None
-_verifier_loaded = False
-
-
-def _ensure_verifier():
-    """Initialize the x402 SDK verifier singleton."""
-    global _verifier_loaded
-    if _verifier_loaded:
-        return True
-    _verifier_loaded = True
-    try:
-        from app.routers.x402_verifier import get_verifier
-
-        get_verifier()  # Initializes on first call
-        logger.info("x402 enforcement: SDK verifier initialized")
-        return True
-    except Exception as e:
-        logger.error(f"x402 enforcement: SDK verifier init failed: {e}")
-        return False
 
 
 # Multi-chain USDC configs + pay-to resolution
