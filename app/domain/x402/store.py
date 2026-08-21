@@ -39,6 +39,21 @@ class PaymentStore:
     def __init__(self, *, validity_seconds: int = PAYMENT_VALIDITY_SECONDS) -> None:
         self.validity_seconds = validity_seconds
         self._records: dict[str, dict[str, Any]] = {}
+        # W2 persistence: optional Redis mirror so verified payment state
+        # survives restarts / multi-instance deployments. Memory remains the
+        # primary read path; any Redis error degrades to memory-only.
+        self._redis: Any = None
+        redis_url = os.getenv("X402_REDIS_URL", os.getenv("REDIS_URL", ""))
+        if redis_url:
+            try:
+                import redis as _sync_redis  # type: ignore[import-untyped]
+
+                self._redis = _sync_redis.Redis.from_url(
+                    redis_url, decode_responses=True, socket_timeout=1.0
+                )
+                self._redis.ping()
+            except Exception:  # noqa: BLE001 — degrade to memory-only
+                self._redis = None
 
     def record(
         self,
@@ -67,11 +82,37 @@ class PaymentStore:
             ).isoformat(),
             "verified_at": datetime.now(UTC).isoformat(),
         }
+        if self._redis is not None:
+            try:
+                import json as _json
+
+                self._redis.setex(
+                    f"coffer:payment:{payment_id}",
+                    self.validity_seconds,
+                    _json.dumps(self._records[payment_id]),
+                )
+            except Exception:  # noqa: BLE001 — never break recording on redis
+                pass
 
     def is_paid(self, payment_id: str, caller_key: str = "") -> bool:
-        """True when the id is verified, unexpired and caller-bound."""
+        """True when the id is verified, unexpired and caller-bound.
+
+        Memory first; on a miss, consult the Redis mirror (restart/multi-instance
+        case) and re-hydrate memory so repeat checks stay local.
+        """
         if not payment_id:
             return False
+        if payment_id not in self._records and self._redis is not None:
+            try:
+                import json as _json
+
+                raw = self._redis.get(f"coffer:payment:{payment_id}")
+                if raw:
+                    rec = _json.loads(raw)
+                    if datetime.fromisoformat(rec["expires_at"]) > datetime.now(UTC):
+                        self._records[payment_id] = rec
+            except Exception:  # noqa: BLE001 — mirror is best-effort
+                pass
         rec = self._records.get(payment_id)
         if rec is None or not rec.get("verified"):
             return False
