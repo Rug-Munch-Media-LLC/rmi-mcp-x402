@@ -269,6 +269,11 @@ def create_app(*args: Any, **kwargs: Any) -> Any:
 
     app.include_router(register_metrics_router())
 
+    # Read-only ops dashboard.
+    from app.domain.x402.dashboard import register_dashboard_router
+
+    app.include_router(register_dashboard_router())
+
     app.add_middleware(
         X402Middleware,
         free_paths=set(cfg.free_paths),

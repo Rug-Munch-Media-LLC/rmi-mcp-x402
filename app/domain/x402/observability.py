@@ -120,6 +120,7 @@ class SettlementLedger:
             "counters": counters,
             "by_network": by_network,
             "settled_amount_atomic_total": paid_atomic,
+            "recent_settlements": self.recent_events(kind="settle", limit=12),
             "ledger_entries": total_events,
             "generated_at": datetime.now(UTC).isoformat(),
         }
