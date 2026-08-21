@@ -15,16 +15,18 @@ Registry shape:
   }
 """
 
-from app.domain.x402.tools.label_tools import get_entity_labels, get_wallet_labels
-from app.domain.x402.tools.market_tools import get_market_overview, get_trending
-from app.domain.x402.tools.news_tools import get_news, get_news_sentiment
-from app.domain.x402.tools.report_tools import generate_report, get_report
-from app.domain.x402.tools.scanner_tools import get_scan_result, run_scan
-from app.domain.x402.tools.token_tools import get_token_info, get_token_risk
-from app.domain.x402.tools.wallet_tools import get_wallet_analysis, get_wallet_history
+from typing import Any
+
+from .label_tools import get_entity_labels, get_wallet_labels
+from .market_tools import get_market_overview, get_trending
+from .news_tools import get_news, get_news_sentiment
+from .report_tools import generate_report, get_report
+from .scanner_tools import get_scan_result, run_scan
+from .token_tools import get_token_info, get_token_risk
+from .wallet_tools import get_wallet_analysis, get_wallet_history
 
 # Tool registry
-TOOLS = {
+TOOLS: dict[str, dict[str, Any]] = {
     "get_token_risk": {
         "function": get_token_risk,
         "free_tier": True,

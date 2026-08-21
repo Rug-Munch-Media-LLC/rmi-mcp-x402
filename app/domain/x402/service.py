@@ -35,7 +35,8 @@ from typing import Any
 
 import httpx
 
-from app.domain.x402.solana_verifier import (
+from .models import VerifyResult
+from .solana_verifier import (
     DEFAULT_SOLANA_RPC_URL,
     verify_solana_payment,
 )
@@ -244,6 +245,12 @@ X402_PRICING: dict[str, Any] = {
         "default": {},
         "prices": {},
     },
+    # Flat per-operation USD prices — the 402 acceptance surface (middleware)
+    # quotes ``accepts[].maxAmountRequired`` off these via resolve_price_usd.
+    "api_access": {"price_usd": 0.01, "description": "x402 paid API call"},
+    "get_token_risk": {"price_usd": 0.01, "description": "Token risk score"},
+    "get_wallet_analysis": {"price_usd": 0.01, "description": "Wallet analysis"},
+    "generate_report": {"price_usd": 0.10, "description": "AI research report"},
 }
 
 
@@ -263,7 +270,8 @@ def resolve_price_usd(op: str, network: str, asset: str) -> float:
     """Server-authoritative USD price for (op, network, asset).
 
     Lookup order: per-op prices[caip2][asset], prices[caip2]["*"], per-op
-    default[asset], static asset quote, per-op default_price.
+    default[asset], flat per-op ``price_usd``, static asset quote, per-op
+    default_price.
     """
     pricing = _load_pricing()
     op_table = pricing.get(op, pricing.get("*", {}))
@@ -278,6 +286,8 @@ def resolve_price_usd(op: str, network: str, asset: str) -> float:
     defaults = op_table.get("default", {})
     if asset in defaults:
         return float(defaults[asset])
+    if "price_usd" in op_table:
+        return float(op_table["price_usd"])
     quote = get_asset_usd_price(asset, network)
     if quote.usd and quote.usd > 0:
         return float(quote.usd)
@@ -412,17 +422,9 @@ class ReplayStore:
 # ── Self-hosted EIP-3009 SelfFacilitator ─────────────────────────────────────
 
 
-@dataclass
-class VerifyResult:
-    """Outcome of a self-hosted x402 payment verification."""
-
-    verified: bool
-    reason: str = ""
-    signer: str = ""
-    amount_atomic: int = 0
-    asset: str = ""
-    network: str = ""
-    scheme: str = "exact"
+# Verification results use the canonical wire type ``models.VerifyResult``
+# (fleet contract §5.1) so the service layer and the HTTP surface share ONE
+# result shape. Construct with keyword arguments only.
 
 
 def _ecrecover_available() -> bool:
@@ -475,8 +477,9 @@ class SelfFacilitator:
             return int(v).to_bytes(32, "big")
 
         domain_type = keccak(
-            text=("EIP712Domain(string name,string version,uint256 chainId,"
-    "address verifyingContract)")
+            text=(
+                "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+            )
         )
         struct_type = keccak(
             text="TransferWithAuthorization(address from,address to,uint256 value,"
@@ -535,37 +538,55 @@ class SelfFacilitator:
         entry = resolve_asset_entry(network, asset)
         if entry is None:
             return VerifyResult(
-                False, f"asset {asset!r} not supported on {network}", asset=asset, network=network
+                verified=False,
+                reason=f"asset {asset!r} not supported on {network}",
+                asset=asset,
+                network=network,
             )
         if entry.get("verification") != "eip3009":
             return VerifyResult(
-                False, "self-facilitator supports eip3009 assets only", asset=asset, network=network
+                verified=False,
+                reason="self-facilitator supports eip3009 assets only",
+                asset=asset,
+                network=network,
             )
         if not _ECRECOVER_AVAILABLE:
             return VerifyResult(
-                False,
-                "eip3009 crypto unavailable: eth-keys not installed",
+                verified=False,
+                reason="eip3009 crypto unavailable: eth-keys not installed",
                 asset=asset,
                 network=network,
             )
         if not self.pay_to or self.pay_to == "pry-default-wallet":
             return VerifyResult(
-                False, "server wallet (payTo) not configured", asset=asset, network=network
+                verified=False,
+                reason="server wallet (payTo) not configured",
+                asset=asset,
+                network=network,
             )
         auth = payment.get("authorization")
         if not isinstance(auth, dict) or not auth:
             return VerifyResult(
-                False, "missing EIP-3009 transferWithAuthorization", asset=asset, network=network
+                verified=False,
+                reason="missing EIP-3009 transferWithAuthorization",
+                asset=asset,
+                network=network,
             )
         chain_id = self._chain_id_for(network)
         if chain_id is None:
             return VerifyResult(
-                False, f"no EVM chain id known for {network}", asset=asset, network=network
+                verified=False,
+                reason=f"no EVM chain id known for {network}",
+                asset=asset,
+                network=network,
             )
         token = str(entry.get("contract") or "").lower()
         if not token:
             return VerifyResult(
-                False, f"no token contract for {asset} on {network}", asset=asset, network=network
+                verified=False,
+                reason=f"no token contract for {asset} on {network}",
+                asset=asset,
+                network=network,
             )
 
         try:
@@ -581,14 +602,17 @@ class SelfFacilitator:
             )
             if recovered != from_addr:
                 return VerifyResult(
-                    False,
-                    f"signer {recovered} != authorization from {from_addr}",
+                    verified=False,
+                    reason=f"signer {recovered} != authorization from {from_addr}",
                     asset=asset,
                     network=network,
                 )
         except Exception as e:
             return VerifyResult(
-                False, f"cannot verify authorization: {e}", asset=asset, network=network
+                verified=False,
+                reason=f"cannot verify authorization: {e}",
+                asset=asset,
+                network=network,
             )
 
         try:
@@ -597,17 +621,21 @@ class SelfFacilitator:
             valid_before = int(auth.get("validBefore") or 0)
         except (ValueError, TypeError, KeyError):
             return VerifyResult(
-                False, "unparseable authorization value/window", asset=asset, network=network
+                verified=False,
+                reason="unparseable authorization value/window",
+                asset=asset,
+                network=network,
             )
 
         try:
             required_atomic = asset_to_atomic(amount_usd, asset, network)
         except ValueError as e:
-            return VerifyResult(False, str(e), asset=asset, network=network)
+            return VerifyResult(verified=False, reason=str(e), asset=asset, network=network)
         if value < required_atomic:
             return VerifyResult(
-                False,
-                f"underpayment: authorized {value} < required {required_atomic} atomic {asset}",
+                verified=False,
+                reason=f"underpayment: authorized {value} < required {required_atomic}"
+                f" atomic {asset}",
                 signer=recovered,
                 asset=asset,
                 network=network,
@@ -617,8 +645,8 @@ class SelfFacilitator:
         if to_addr and ("0x" + to_addr).lower() != self.pay_to and to_addr.lower() != self.pay_to:
             if str(auth.get("to") or "").lower() != self.pay_to:
                 return VerifyResult(
-                    False,
-                    f"recipient {auth.get('to')} != configured payTo {self.pay_to}",
+                    verified=False,
+                    reason=f"recipient {auth.get('to')} != configured payTo {self.pay_to}",
                     asset=asset,
                     network=network,
                 )
@@ -628,23 +656,33 @@ class SelfFacilitator:
         now = int(_t.time())
         if now < valid_after:
             return VerifyResult(
-                False,
-                "authorization not valid yet (validAfter in future)",
+                verified=False,
+                reason="authorization not valid yet (validAfter in future)",
                 asset=asset,
                 network=network,
             )
         if valid_before and now >= valid_before:
             return VerifyResult(
-                False, "authorization expired (validBefore passed)", asset=asset, network=network
+                verified=False,
+                reason="authorization expired (validBefore passed)",
+                asset=asset,
+                network=network,
             )
 
         nonce_key = f"{chain_id}:{token}:{self._nonce_bytes(auth.get('nonce')).hex()}"
         if nonce_key in self.nonces:
-            return VerifyResult(False, "nonce already used (replay)", asset=asset, network=network)
+            return VerifyResult(
+                verified=False, reason="nonce already used (replay)", asset=asset, network=network
+            )
         self.nonces.add(nonce_key)
 
         return VerifyResult(
-            True, "", signer=recovered, amount_atomic=value, asset=asset, network=network
+            verified=True,
+            reason="",
+            signer=recovered,
+            amount_atomic=value,
+            asset=asset,
+            network=network,
         )
 
     async def settle(self, payment: dict[str, Any]) -> str | None:
@@ -1052,7 +1090,15 @@ class FacilitatorRouter:
             }
 
         if X402_OFFLINE_MODE:
-            await self._enforce_replay(tx_hash, network_id)
+            ok, reason = await self._enforce_replay(tx_hash, network_id)
+            if not ok:
+                return {
+                    "verified": False,
+                    "reason": reason,
+                    "settlement": None,
+                    "network": network_id,
+                    "http_status": REPLAY_HTTP_STATUS,
+                }
             return {"verified": True, "reason": "offline_mode", "settlement": None}
 
         # TRON stays scaffolded — never claimed verified. [REVIEW]
@@ -1093,7 +1139,7 @@ class FacilitatorRouter:
         try:
             result: Any = await impl.verify(payment)
         except Exception as e:
-            result = VerifyResult(False, f"facilitator verify error: {e}")
+            result = VerifyResult(verified=False, reason=f"facilitator verify error: {e}")
         if getattr(result, "verified", False):
             return {
                 "verified": True,
@@ -1288,7 +1334,7 @@ class FacilitatorRouter:
             return {
                 "verified": False,
                 "reason": f"needs_facilitator: asset {asset!r} not in SUPPORTED_ASSETS "
-                    f"for {network_id}",
+                f"for {network_id}",
                 "settlement": None,
                 "scaffolded": True,
                 "network": network_id,
@@ -1304,7 +1350,7 @@ class FacilitatorRouter:
         return {
             "verified": False,
             "reason": "needs_facilitator: on-chain settlement verification "
-                    "not implemented for this chain",
+            "not implemented for this chain",
             "settlement": None,
             "scaffolded": True,
             "network": network_id,
@@ -1312,7 +1358,7 @@ class FacilitatorRouter:
             "supported": True,
             "verification_status": network_verification_status(network_id),
             "note": "Header structure, asset and price validated; settlement NOT verified. "
-                    "See VERIFICATION_STATUS.",
+            "See VERIFICATION_STATUS.",
         }
 
     # ── settle ─────────────────────────────────────────────────────────────
@@ -1436,7 +1482,7 @@ class FacilitatorRouter:
             "success": False,
             "payment_id": payment_id,
             "reason": "self-hosted settle unavailable: no authorization, "
-                "no facilitator key/RPC, or chain unreachable",
+            "no facilitator key/RPC, or chain unreachable",
             "facilitator": "self-hosted",
         }
 

@@ -12,10 +12,11 @@ the HTTP transport specs (``docs/x402-official-spec/transports-v1__http.md`` /
       X-Payment-Required: true
       X-Payment-Options: x402
 
-  and a JSON body ``{x402Version: 1, accepts: [...]}`` built via the mirrored
-  canonical ``build_payment_required`` / ``build_multi_asset_accepts``
-  (multi-asset, CAIP-2 network ids, atomic ``maxAmountRequired``, configured
-  ``payToAddress`` — NOT a hardcoded placeholder).
+  and a JSON body ``{x402Version: 1, accepts: [...]}`` built via
+  :func:`build_payment_required` / :func:`build_multi_asset_accepts`
+  (multi-asset, CAIP-2 network ids, atomic ``maxAmountRequired`` strings,
+  asset SYMBOL + ``extra.contract`` address, configured ``payToAddress`` —
+  NOT a hardcoded placeholder).
 
 - After paying via a facilitator, the client replays with ``X-Payment-ID``;
   the id is checked against a caller-bound (client IP), TTL'd store (mirrors
@@ -23,11 +24,24 @@ the HTTP transport specs (``docs/x402-official-spec/transports-v1__http.md`` /
 
 - ``free_paths`` subsets (``/health``, ``/docs``) pass through.
 
-NOTE on the canonical reference: the local ``x402-py`` reference is NOT
-vendored into this repo's dependency set (see ``pyproject.toml``), and the
-installed PyPI ``x402`` (v2.14.0) exposes a different API. Per the conformance
-contract these helpers MIRROR the ``x402-py`` canonical implementations exactly
-so the emitted wire format is byte-for-byte the spec shape.
+Header convention (fleet-canonical, ONE convention across the domain layer):
+
+- replay  : ``X-Payment-ID: <verified payment id>`` (contract §2.3)
+- offer   : ``PAYMENT-REQUIRED`` (base64 body) + ``X-Payment-Required: true``
+  + ``X-Payment-Options: x402`` (contract §2.1)
+
+The legacy ``X-Payment: base64({tx_hash, signature})`` client header and the
+v2 ``PAYMENT-SIGNATURE`` header are NOT consumed on the v1 wire — payment
+proofs go through ``POST /v1/x402/verify`` and replay uses ``X-Payment-ID``.
+TODO(v2): additive — accept ``PAYMENT-SIGNATURE`` payloads once the gateway
+migrates to x402Version=2 (see ``models.X402_VERSION``).
+
+Single source of truth: network/asset metadata comes from
+``models.SUPPORTED_NETWORKS`` / ``models.SUPPORTED_ASSETS`` (canonical,
+mirrors ``x402-py:x402/scheme.py``), pricing + wallets from ``service``
+(``resolve_price_usd``, ``X402_NETWORK_WALLETS``) — so middleware, router and
+service can never drift apart. The local ``x402-py`` reference is not
+vendored (see ``pyproject.toml``); these helpers mirror its wire output.
 """
 
 from __future__ import annotations
@@ -45,6 +59,15 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from .models import SUPPORTED_ASSETS, SUPPORTED_NETWORKS, flatten_supported_assets
+from .service import (
+    X402_NETWORK_WALLETS,
+    X402_PRICING,
+    X402_WALLET,
+    asset_to_atomic,
+    resolve_price_usd,
+)
+
 log = logging.getLogger(__name__)
 
 # ── Spec headers on the 402 response ────────────────────────────────────────
@@ -55,13 +78,16 @@ HEADER_CONTENT_TYPE = "Content-Type"
 # Replay header a paid client presents on subsequent requests.
 HEADER_X_PAYMENT_ID = "X-Payment-ID"
 
-# TTL for verified payment ids (mirrors x402-py PAYMENT_VALIDITY_SECONDS).
+#: TTL for verified payment ids (mirrors x402-py ``PAYMENT_VALIDITY_SECONDS``;
+#: env ``X402_PAYMENT_TTL`` overrides).
 PAYMENT_VALIDITY_SECONDS: int = int(os.getenv("X402_PAYMENT_TTL", "3600"))
 
-# x402 version this implementation emits.
+# x402 version this implementation emits (v1 wire; TODO(v2) additive).
 X402_VERSION = 1
 
 # ── Canonical acceptance surface (CAIP-2 ids, per X402-SPEC-CONTRACT §3) ────
+# Legacy bare name -> CAIP-2 id for INPUT normalisation only; everything this
+# module EMITS is CAIP-2 (canonical tables live in models.py).
 LEGACY_TO_CAIP2: dict[str, str] = {
     "base": "eip155:8453",
     "ethereum": "eip155:1",
@@ -72,40 +98,16 @@ LEGACY_TO_CAIP2: dict[str, str] = {
     "tron": "tron:mainnet",
 }
 
-ASSET_DECIMALS: dict[str, int] = {
-    "USDC": 6,
-    "USDT": 6,
-    "DAI": 18,
-    "ETH": 18,
-    "WETH": 18,
-    "ARB": 18,
-    "MATIC": 18,
-    "POL": 18,
-    "SOL": 9,
-    "TRX": 6,
-}
-
-# Which assets each CAIP-2 network accepts for payment.
+# Which assets each CAIP-2 network accepts — derived from the canonical table.
 NETWORK_ASSETS: dict[str, list[str]] = {
-    "eip155:8453": ["USDC", "USDT", "ETH", "WETH", "DAI"],
-    "eip155:1": ["USDC", "USDT", "ETH", "WETH"],
-    "eip155:42161": ["USDC", "USDT", "ARB", "WETH"],
-    "eip155:10": ["USDC", "USDT", "WETH"],
-    "eip155:137": ["USDC", "USDT", "POL", "MATIC"],
-    "solana:mainnet": ["USDC", "USDT", "SOL"],
-    "tron:mainnet": ["USDC", "USDT", "TRX"],
+    network: list(assets) for network, assets in SUPPORTED_ASSETS.items()
 }
 
-# Server-authoritative pricing (USD) per operation — NEVER trust the client.
-X402_PRICING: dict[str, dict[str, Any]] = {
-    "api_access": {"price_usd": 0.01, "description": "x402 paid API call"},
-    "get_token_risk": {"price_usd": 0.01, "description": "Token risk score"},
-    "get_wallet_analysis": {"price_usd": 0.01, "description": "Wallet analysis"},
-    "generate_report": {"price_usd": 0.10, "description": "AI research report"},
-}
-
-# ── Verified-payment store (X402Handler-style: caller-bound + TTL) ──────────
-DEFAULT_PRICE_USD = 0.01
+# Stablecoin USD-per-unit is 1:1; volatile assets use a static fallback quote
+# (a live oracle would refine this; contract §4). Mirrors x402-py
+# ``usd_per_unit_for``. None => asset cannot be quoted honestly -> skipped.
+_STABLECOIN_ASSETS = {"USDC", "USDT", "DAI", "POL", "MATIC", "TRX"}
+_STATIC_USD_PER_UNIT = {"ETH": 3000.0, "WETH": 3000.0, "ARB": 1.0, "SOL": 150.0}
 
 
 def normalize_network_id(network: str) -> str:
@@ -114,39 +116,26 @@ def normalize_network_id(network: str) -> str:
 
 
 def _pay_to_address(caip2: str) -> str:
-    """Resolve the configured receiving wallet for a CAIP-2 network."""
-    family = "solana" if caip2.startswith("solana:") else caip2
-    key = f"X402_WALLET_{family.replace(':', '_').upper()}"
-    return os.getenv(key) or os.getenv("X402_WALLET") or ""
+    """Resolve the configured receiving wallet for a CAIP-2 network.
 
-
-def asset_to_atomic(amount_usd: float, asset: str, network: str) -> int:
-    """Convert a USD price to atomic units for ``asset`` on ``network``.
-
-    Stablecoins are USD 1:1 at their fixed decimals. Volatile assets fall back
-    to a static USD-per-unit estimate (a live oracle would refine this; see
-    contract §4). Atomic so float drift can't be exploited server-side.
+    Single payTo authority: the service-layer ``X402_NETWORK_WALLETS`` map
+    (env ``X402_WALLET_<NETWORK>`` per CAIP-2 id, fallback ``X402_WALLET``).
     """
-    decimals = ASSET_DECIMALS.get(asset.upper(), 6)
-    unit = 10**decimals
-    usd_per_unit = _usd_per_unit(asset.upper())
-    if usd_per_unit is None or usd_per_unit <= 0:
-        return int(round(amount_usd * unit))
-    return int(round(amount_usd / usd_per_unit * unit))
+    return (X402_NETWORK_WALLETS.get(caip2) or X402_WALLET or "").strip()
 
 
-def _usd_per_unit(asset: str) -> float | None:
-    """Static USD-per-unit for volatile assets; None means USD-pegged."""
-    stable = {"USDC", "USDT", "DAI", "POL", "MATIC", "TRX"}
-    if asset in stable:
+def _usd_per_unit_for(asset: str) -> float | None:
+    """USD price of ONE whole unit of ``asset`` (None => not quotable)."""
+    asset = asset.upper()
+    if asset in _STABLECOIN_ASSETS:
         return 1.0
-    fallback = {"ETH": 3000.0, "WETH": 3000.0, "ARB": 1.0, "SOL": 150.0}
-    return fallback.get(asset)
+    return _STATIC_USD_PER_UNIT.get(asset)
 
 
-def _price_usd(operation: str) -> float:
-    info = X402_PRICING.get(operation) or X402_PRICING.get("api_access")
-    return float((info or {}).get("price_usd", DEFAULT_PRICE_USD))
+def _operation_description(operation: str) -> str:
+    """Human-readable description for an operation from the pricing table."""
+    info = X402_PRICING.get(operation) or X402_PRICING.get("api_access") or {}
+    return str(info.get("description") or operation or "api_access")
 
 
 def _option(
@@ -156,18 +145,49 @@ def _option(
     description: str,
     caip2: str,
     asset: str,
-) -> dict[str, Any]:
-    """One ``accepts[]`` entry (exact scheme, atomic amount, CAIP-2 id)."""
+    entry: dict[str, Any],
+) -> dict[str, Any] | None:
+    """One ``accepts[]`` entry (exact scheme, atomic amount, CAIP-2 id).
+
+    Carries the asset SYMBOL in ``asset`` and the contract address in
+    ``extra.contract`` (fleet v1 convention; the official v2 spec uses the
+    address directly — see ``models.SUPPORTED_ASSETS``). Returns None when the
+    option cannot be quoted honestly (no USD-per-unit or no atomic conversion).
+    """
+    unit_usd = _usd_per_unit_for(asset)
+    if unit_usd is None:
+        return None
+    price_usd = resolve_price_usd(operation, caip2, asset)
+    if price_usd <= 0:
+        return None
+    try:
+        amount_atomic = asset_to_atomic(price_usd, asset, caip2)
+    except ValueError:
+        # Not verifiable/quotable on this network — never advertise it.
+        return None
     return {
         "scheme": "exact",
         "network": caip2,
-        "maxAmountRequired": str(asset_to_atomic(_price_usd(operation), asset, caip2)),
+        "maxAmountRequired": str(amount_atomic),
         "resource": resource,
         "description": description,
         "mimeType": "application/json",
         "payToAddress": _pay_to_address(caip2),
         "asset": asset.upper(),
-        "extra": {"name": asset.upper(), "version": "2", "operation": operation},
+        "extra": {
+            "name": str(entry.get("name") or asset),
+            "version": "2",
+            "operation": operation,
+            "caip2": caip2,
+            "verification": str(entry.get("verification") or ""),
+            "contract": str(entry.get("contract") or ""),
+            "decimals": int(entry.get("decimals") or 6),
+            "priceUsd": price_usd,
+            "usdPerUnit": unit_usd,
+            "usdPerUnitSource": (
+                "stablecoin" if asset.upper() in _STABLECOIN_ASSETS else "static-default"
+            ),
+        },
     }
 
 
@@ -176,35 +196,42 @@ def build_multi_asset_accepts(
     resource: str = "",
     description: str = "",
 ) -> list[dict[str, Any]]:
-    """Multi-asset ``accepts[]`` covering every quotable (network, asset)."""
+    """Multi-asset ``accepts[]`` covering every quotable (network, asset).
+
+    Only networks with a configured receiving wallet are advertised, and only
+    assets that can be quoted + verified honestly (mirrors x402-py
+    ``build_multi_asset_accepts`` skip rules).
+    """
     if not description:
-        info = X402_PRICING.get(operation) or X402_PRICING.get("api_access")
-        description = str((info or {}).get("description") or operation or "api_access")
+        description = _operation_description(operation)
     accepts: list[dict[str, Any]] = []
-    for caip2, assets in NETWORK_ASSETS.items():
-        for asset in assets:
-            if _pay_to_address(caip2):
-                # Only advertise networks we have a receiving wallet for.
-                accepts.append(
-                    _option(
-                        operation=operation,
-                        resource=resource,
-                        description=description,
-                        caip2=caip2,
-                        asset=asset,
-                    )
-                )
-    if not accepts:
-        base = normalize_network_id("base")
-        accepts.append(
-            _option(
+    for caip2, assets in SUPPORTED_ASSETS.items():
+        if not _pay_to_address(caip2):
+            # Only advertise networks we have a receiving wallet for.
+            continue
+        for asset, entry in assets.items():
+            option = _option(
                 operation=operation,
                 resource=resource,
                 description=description,
-                caip2=base,
-                asset="USDC",
+                caip2=caip2,
+                asset=asset,
+                entry=entry,
             )
+            if option is not None:
+                accepts.append(option)
+    if not accepts:
+        base = normalize_network_id("base")
+        fallback = _option(
+            operation=operation,
+            resource=resource,
+            description=description,
+            caip2=base,
+            asset="USDC",
+            entry=SUPPORTED_ASSETS[base]["USDC"],
         )
+        if fallback is not None:
+            accepts.append(fallback)
     return accepts
 
 
@@ -213,19 +240,19 @@ def build_payment_required(
     resource: str = "",
     multi_asset: bool = True,
 ) -> dict[str, Any]:
-    """Build the spec-compliant ``{x402Version:1, accepts:[...]}`` body."""
+    """Build the spec-compliant ``{x402Version:1, accepts:[...]}`` body.
+
+    TODO(v2): additive — x402Version=2 restructures accepts entries
+    (``amount``/``payTo``, top-level ResourceInfo); keep this v1 shape until
+    the gateway migrates.
+    """
     accepts = build_multi_asset_accepts(operation, resource=resource)
     body: dict[str, Any] = {"x402Version": X402_VERSION, "accepts": accepts}
     if multi_asset:
-        # Additive multi-chain surface so agents see every network/asset.
-        body["networks"] = [
-            {"id": caip2, "assets": assets} for caip2, assets in NETWORK_ASSETS.items()
-        ]
-        body["supported_assets"] = [
-            {"network": caip2, "asset": asset}
-            for caip2, assets in NETWORK_ASSETS.items()
-            for asset in assets
-        ]
+        # Additive multi-chain surface so agents see every network/asset
+        # (canonical row shapes — models.NetworkInfo / models.SupportedAsset).
+        body["networks"] = [dict(network) for network in SUPPORTED_NETWORKS]
+        body["supported_assets"] = flatten_supported_assets()
     return body
 
 
@@ -409,6 +436,7 @@ class X402Middleware:
             return
         body = payment_required_body(resource=path)
         response_headers = payment_required_headers(body)
+        log.debug("x402_payment_required", extra={"path": path, "caller": caller_key})
         await send(
             {
                 "type": "http.response.start",
@@ -448,6 +476,7 @@ def require_payment(
             if request is not None and _is_paid_for(request, active_store):
                 return True
             body = payment_required_body()
+            log.debug("x402_payment_required", extra={"handler": getattr(fn, "__name__", "")})
             return JSONResponse(
                 status_code=402, content=body, headers=payment_required_headers(body)
             )
@@ -489,9 +518,12 @@ __all__ = [
     "HEADER_X_PAYMENT_ID",
     "HEADER_X_PAYMENT_OPTIONS",
     "HEADER_X_PAYMENT_REQUIRED",
+    "LEGACY_TO_CAIP2",
+    "NETWORK_ASSETS",
     "PAYMENT_VALIDITY_SECONDS",
     "PaymentStore",
     "X402Middleware",
+    "X402_VERSION",
     "asset_to_atomic",
     "build_multi_asset_accepts",
     "build_payment_required",
@@ -502,5 +534,6 @@ __all__ = [
     "payment_required_body",
     "payment_required_headers",
     "require_payment",
+    "resolve_price_usd",
     "set_default_store",
 ]

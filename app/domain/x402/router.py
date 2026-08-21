@@ -6,14 +6,17 @@ Exposes the official x402 HTTP transport surface:
   (``PAYMENT-REQUIRED`` base64 + ``X-Payment-Required`` + ``X-Payment-Options``)
   and the ``{x402Version:1, accepts:[...]}`` body for a not-yet-paid caller.
 - ``POST /v1/x402/verify``   — delegate a payment proof to the
-  ``FacilitatorRouter`` (from :mod:`app.domain.x402.service`, agent3-owned);
-  on success the verified id is recorded caller-bound + TTL'd in the shared
+  ``FacilitatorRouter`` (from :mod:`app.domain.x402.service`); on success the
+  verified id is recorded caller-bound + TTL'd in the shared
   :class:`PaymentStore` so replay with ``X-Payment-ID`` passes the middleware.
+  Replay rejection (an already-used tx_hash) surfaces as ``410 Gone``.
 - ``POST /v1/x402/settle``   — delegate settlement to the FacilitatorRouter.
 - ``GET  /v1/x402/health``   — honest acceptance/verification status.
 
 Holds NO verification logic itself — it only wires the middleware's payment
-store to the facilitator layer.
+store to the facilitator layer. The verify/settle endpoints use the
+PROCESS-WIDE ``get_facilitator_router()`` singleton so failure counters,
+registered per-network facilitators and the replay-nonce store are shared.
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from app.domain.x402.middleware import (
+from .middleware import (
     HEADER_PAYMENT_REQUIRED,
     HEADER_X_PAYMENT_ID,
     HEADER_X_PAYMENT_OPTIONS,
@@ -36,25 +39,11 @@ from app.domain.x402.middleware import (
     payment_required_body,
     payment_required_headers,
 )
+from .service import REPLAY_HTTP_STATUS, VERIFICATION_STATUS, get_facilitator_router
 
 router = APIRouter(prefix="/v1/x402", tags=["x402"])
 
-VERIFICATION_STATUS = {
-    "evm": "live",
-    "solana": "live",
-    "tron": "scaffolded:needs_facilitator",
-}
-
-
-def _get_facilitator_router() -> Any:
-    """Return agent3's ``FacilitatorRouter`` (imported lazily from service.py).
-
-    Imported lazily — not at module load — so this router keeps working and
-    type-checks clean if the interface is still landing in ``service.py``.
-    """
-    from app.domain.x402.service import FacilitatorRouter  # type: ignore[attr-defined]
-
-    return FacilitatorRouter()
+__all__ = ["health", "payment_challenge", "router", "settle", "verify"]
 
 
 def _get_store() -> PaymentStore:
@@ -110,7 +99,7 @@ async def verify(request: Request) -> JSONResponse:
             content={"x402Version": 1, "error": "payment_id and tx_hash are required"},
         )
 
-    result = await _get_facilitator_router().verify(
+    result = await get_facilitator_router().verify(
         payment_id,
         tx_hash,
         network,
@@ -121,8 +110,11 @@ async def verify(request: Request) -> JSONResponse:
     if not result.get("verified"):
         body = payment_required_body(operation="api_access")
         headers = payment_required_headers(body)
+        # Replay of an already-used tx_hash maps to 410 Gone (contract G2/G8);
+        # every other failure re-offers the 402 acceptance surface.
+        status = int(result.get("http_status") or 402)
         return JSONResponse(
-            status_code=402,
+            status_code=status,
             content={
                 "x402Version": 1,
                 "error": result.get("reason", "payment verification failed"),
@@ -174,7 +166,7 @@ async def settle(request: Request) -> JSONResponse:
             content={"error": "payment_id and tx_hash are required"},
         )
 
-    settlement = await _get_facilitator_router().settle(
+    settlement = await get_facilitator_router().settle(
         payment_id,
         tx_hash,
         network,
@@ -193,7 +185,8 @@ async def health() -> JSONResponse:
         content={
             "status": "ok",
             "x402Version": 1,
-            "verification_status": VERIFICATION_STATUS,
+            "verification_status": dict(VERIFICATION_STATUS),
+            "replay_http_status": REPLAY_HTTP_STATUS,
             "payment_validity_seconds": PAYMENT_VALIDITY_SECONDS,
             "active_payments": len(store),
             "replay_header": HEADER_X_PAYMENT_ID,
