@@ -34,7 +34,7 @@ SCHEME_BATCH_SETTLEMENT = "batch-settlement"  # wire value (not yet on enum)
 DEFAULT_DEPOSIT_MULTIPLIER = 5
 MIN_DEPOSIT_MULTIPLIER = 3
 
-_ASSET_ALIASES: dict[str, dict[str, str]] = {
+_ASSET_ALIASES: dict[str, dict[str, str | int]] = {
     "usdc": {"name": "USDC", "decimals": 6},
     "usdt": {"name": "USDT", "decimals": 6},
     "dai": {"name": "DAI", "decimals": 18},
@@ -103,7 +103,7 @@ class UpToScheme:
     facilitator_address: str = field(default="")  # spec: binds the authorization
 
     @property
-    def asset_meta(self) -> dict[str, str]:
+    def asset_meta(self) -> dict[str, str | int]:
         return _ASSET_ALIASES.get(self.asset.lower(), {"name": self.asset, "decimals": 18})
 
     def payment_option(self, resource: str, description: str, pay_to: str) -> dict[str, Any]:
