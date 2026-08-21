@@ -73,7 +73,7 @@ _HEADER_X_PAYMENT_REQUIRED = "X-Payment-Required"
 _HEADER_X_PAYMENT_OPTIONS = "X-Payment-Options"
 
 
-class PaymentRequired(Exception):
+class PaymentRequired(Exception):  # noqa: N818 (x402 spec name: HTTP 402 Payment Required)
     """Raised when a payment is due and no framework adapter can render it.
 
     Carries the spec-compliant 402 ``body`` (JSON-serializable dict) and

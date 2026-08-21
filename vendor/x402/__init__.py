@@ -14,12 +14,11 @@ code lives in:
   jsonParsed, httpx + stdlib — no Solana SDK)
 - ``x402.middleware``  — framework adapters (ASGI/WSGI/Flask + require_payment)
 
-Configuration: every setting reads ``X402_*`` env vars first, with the
-legacy ``PRY_X402_*`` names kept as backward-compat fallbacks. Wallets and
-URLs may also come from a secret resolver registered via
-``set_secret_resolver`` (only consulted when the env var is unset and
-``X402_SECRET_RESOLVER`` is set). Payment records and nonce persistence
-live under ``X402_DATA_DIR`` (default ``~/.x402``).
+Configuration: every setting reads ``X402_*`` env vars (canonical, no
+legacy aliases). Wallets and URLs may also come from a secret resolver
+registered via ``set_secret_resolver`` (only consulted when the env var is
+unset and ``X402_SECRET_RESOLVER`` is set). Payment records and nonce
+persistence live under ``X402_DATA_DIR`` (default ``~/.x402``).
 
 Constants are kept at the package root (not in a submodule) so
 ``importlib.reload(x402)`` recomputes them after tests patch the
@@ -77,13 +76,9 @@ def _env_flag(name: str) -> bool:
     return os.getenv(name, "false").lower() in ("1", "true", "yes")
 
 
-def _env_or_legacy(name: str, legacy_name: str, default: str = "") -> str:
-    """Read an env var preferring ``X402_*`` with ``PRY_X402_*`` fallback.
-
-    New name wins; the legacy name is kept so deployments carried over from
-    Pry keep working unchanged. Empty values fall through to the default.
-    """
-    return os.getenv(name) or os.getenv(legacy_name) or default
+def _env(name: str, default: str = "") -> str:
+    """Read a canonical ``X402_*`` env var; empty values fall through to the default."""
+    return os.getenv(name) or default
 
 
 _secret_resolver: Callable[[str], str] | None = None
@@ -118,23 +113,24 @@ def _get_secret(name: str, env_var: str, default: str = "") -> str:
 
 # Secrets resolve env-var first; a registered resolver only fills gaps.
 #   X402_WALLET=0x...                    # canonical env var
-#   PRY_X402_WALLET=0x...                # legacy fallback
 #   set_secret_resolver(my_lookup)       # optional pluggable backend
 #
 # Kept at the package root (not in a submodule) so importlib.reload(x402)
 # recomputes the values after tests patch the environment and reload.
-X402_WALLET: str = _get_secret("x402_wallet", "X402_WALLET") or os.getenv("PRY_X402_WALLET", "") or "pry-default-wallet"
+# Sentinel payTo address used until an operator configures a real wallet.
+# Verification fails closed while this placeholder is in effect.
+X402_UNCONFIGURED_WALLET: str = "coffer-unconfigured-wallet"
+
+X402_WALLET: str = _get_secret("x402_wallet", "X402_WALLET") or X402_UNCONFIGURED_WALLET
 X402_FACILITATOR_URL: str = (
-    _get_secret("x402_facilitator", "X402_FACILITATOR_URL")
-    or os.getenv("PRY_X402_FACILITATOR", "")
-    or "https://x402.org/facilitator"
+    _get_secret("x402_facilitator", "X402_FACILITATOR_URL") or "https://x402.org/facilitator"
 )
 
 # NOTE: literal defaults are equal to X402Network.BASE.value and
 # X402Asset.USDC.value; the enums live in x402.scheme which is imported after
 # this config block so the constants stay reload-recomputable.
-X402_DEFAULT_NETWORK: str = _env_or_legacy("X402_NETWORK", "PRY_X402_NETWORK", "base")
-X402_DEFAULT_ASSET: str = _env_or_legacy("X402_ASSET", "PRY_X402_ASSET", "USDC")
+X402_DEFAULT_NETWORK: str = _env("X402_NETWORK", "base")
+X402_DEFAULT_ASSET: str = _env("X402_ASSET", "USDC")
 
 # Per-network receiving wallets (CAIP-2 keyed). A Solana/TRON receiving
 # address is NOT the same as the EVM wallet, so operators MUST configure
@@ -142,23 +138,22 @@ X402_DEFAULT_ASSET: str = _env_or_legacy("X402_ASSET", "PRY_X402_ASSET", "USDC")
 # X402_WALLET when unset — acceptable for EVM, [REVIEW] invalid for
 # solana/tron until configured.
 X402_NETWORK_WALLETS: dict[str, str] = {
-    "eip155:8453": _env_or_legacy("X402_WALLET_BASE", "PRY_X402_WALLET_BASE"),
-    "eip155:1": _env_or_legacy("X402_WALLET_ETHEREUM", "PRY_X402_WALLET_ETHEREUM"),
-    "eip155:42161": _env_or_legacy("X402_WALLET_ARBITRUM", "PRY_X402_WALLET_ARBITRUM"),
-    "eip155:10": _env_or_legacy("X402_WALLET_OPTIMISM", "PRY_X402_WALLET_OPTIMISM"),
-    "eip155:137": _env_or_legacy("X402_WALLET_POLYGON", "PRY_X402_WALLET_POLYGON"),
-    "solana:mainnet": _env_or_legacy("X402_WALLET_SOLANA", "PRY_X402_WALLET_SOLANA"),
-    "tron:mainnet": _env_or_legacy("X402_WALLET_TRON", "PRY_X402_WALLET_TRON"),
+    "eip155:8453": _env("X402_WALLET_BASE"),
+    "eip155:1": _env("X402_WALLET_ETHEREUM"),
+    "eip155:42161": _env("X402_WALLET_ARBITRUM"),
+    "eip155:10": _env("X402_WALLET_OPTIMISM"),
+    "eip155:137": _env("X402_WALLET_POLYGON"),
+    "solana:mainnet": _env("X402_WALLET_SOLANA"),
+    "tron:mainnet": _env("X402_WALLET_TRON"),
 }
 
 # Offline mode is a DEV-ONLY bypass: it makes every verify/settle succeed
 # without touching a facilitator. It must NEVER be active in production, so
-# it requires BOTH (X402_OFFLINE or PRY_X402_OFFLINE)=true AND a debug flag
-# (X402_DEBUG / DEBUG / PRY_DEBUG). Without the debug gate a bare offline
-# flag is ignored loudly.
-X402_DEBUG_MODE: bool = _env_flag("X402_DEBUG") or _env_flag("DEBUG") or _env_flag("PRY_DEBUG")
-X402_OFFLINE_MODE: bool = (_env_flag("X402_OFFLINE") or _env_flag("PRY_X402_OFFLINE")) and X402_DEBUG_MODE
-if (_env_flag("X402_OFFLINE") or _env_flag("PRY_X402_OFFLINE")) and not X402_DEBUG_MODE:
+# it requires BOTH X402_OFFLINE=true AND a debug flag (X402_DEBUG / DEBUG).
+# Without the debug gate a bare offline flag is ignored loudly.
+X402_DEBUG_MODE: bool = _env_flag("X402_DEBUG") or _env_flag("DEBUG")
+X402_OFFLINE_MODE: bool = _env_flag("X402_OFFLINE") and X402_DEBUG_MODE
+if _env_flag("X402_OFFLINE") and not X402_DEBUG_MODE:
     logger.warning(
         "X402_OFFLINE=true IGNORED: offline mode requires X402_DEBUG=true (or DEBUG=true) "
         "and is intended for local development only."
@@ -168,27 +163,23 @@ if X402_OFFLINE_MODE:
         "x402_offline_mode_active: ALL payment verification is BYPASSED — "
         "dev-only setting. DO NOT run with X402_OFFLINE=true in production."
     )
-X402_TIMEOUT_SECONDS: float = float(_env_or_legacy("X402_TIMEOUT", "PRY_X402_TIMEOUT", "15"))
+X402_TIMEOUT_SECONDS: float = float(_env("X402_TIMEOUT", "15"))
 
 # How long a verified payment_id stays valid for replay (access reuse).
 # After this window the client must pay again. Payments recorded before this
 # setting existed (no expires_at) are treated as expired (fail closed).
-PAYMENT_VALIDITY_SECONDS: int = int(_env_or_legacy("X402_PAYMENT_TTL", "PRY_X402_PAYMENT_TTL", "3600"))
+PAYMENT_VALIDITY_SECONDS: int = int(_env("X402_PAYMENT_TTL", "3600"))
 
 # EIP-7702 self-verify RPC endpoints (public defaults, override via env)
 EIP7702_RPC: dict[str, str] = {
-    "base": _env_or_legacy("X402_BASE_RPC", "PRY_X402_BASE_RPC", "https://mainnet.base.org"),
-    "ethereum": _env_or_legacy("X402_ETH_RPC", "PRY_X402_ETH_RPC", "https://eth.llamarpc.com"),
-    "polygon": _env_or_legacy("X402_POLYGON_RPC", "PRY_X402_POLYGON_RPC", "https://polygon.drpc.org"),
-    "arbitrum": _env_or_legacy("X402_ARBITRUM_RPC", "PRY_X402_ARBITRUM_RPC", "https://arb1.arbitrum.io/rpc"),
-    "optimism": _env_or_legacy("X402_OPTIMISM_RPC", "PRY_X402_OPTIMISM_RPC", "https://mainnet.optimism.io"),
-    "bnb": _env_or_legacy("X402_BNB_RPC", "PRY_X402_BNB_RPC", "https://bsc-dataseed.binance.org"),
-    "avalanche": _env_or_legacy(
-        "X402_AVALANCHE_RPC",
-        "PRY_X402_AVALANCHE_RPC",
-        "https://api.avax.network/ext/bc/C/rpc",
-    ),
-    "base-sepolia": _env_or_legacy("X402_BASE_SEPOLIA_RPC", "PRY_X402_BASE_SEPOLIA_RPC", "https://sepolia.base.org"),
+    "base": _env("X402_BASE_RPC", "https://mainnet.base.org"),
+    "ethereum": _env("X402_ETH_RPC", "https://eth.llamarpc.com"),
+    "polygon": _env("X402_POLYGON_RPC", "https://polygon.drpc.org"),
+    "arbitrum": _env("X402_ARBITRUM_RPC", "https://arb1.arbitrum.io/rpc"),
+    "optimism": _env("X402_OPTIMISM_RPC", "https://mainnet.optimism.io"),
+    "bnb": _env("X402_BNB_RPC", "https://bsc-dataseed.binance.org"),
+    "avalanche": _env("X402_AVALANCHE_RPC", "https://api.avax.network/ext/bc/C/rpc"),
+    "base-sepolia": _env("X402_BASE_SEPOLIA_RPC", "https://sepolia.base.org"),
 }
 
 # Canonical ERC-20 token addresses used to validate EIP-7702 self-verify txs.
@@ -241,11 +232,9 @@ EIP7702_TOKEN_ADDRESSES: dict[str, dict[str, str]] = {
 # local SelfFacilitator. X402_FACILITATOR_KEY is the EVM private key used
 # to pay gas when broadcasting settlement; X402_FACILITATOR_RPC is the
 # JSON-RPC endpoint. See x402/self_facilitator.py.
-X402_SELF_FACILITATE: bool = _env_flag("X402_SELF_FACILITATE") or _env_flag("PRY_X402_SELF_FACILITATE")
-X402_SELF_FACILITATOR_KEY: str = _get_secret("x402_facilitator_key", "X402_FACILITATOR_KEY") or os.getenv(
-    "PRY_X402_FACILITATOR_KEY", ""
-)
-X402_SELF_FACILITATOR_RPC: str = _env_or_legacy("X402_FACILITATOR_RPC", "PRY_X402_FACILITATOR_RPC")
+X402_SELF_FACILITATE: bool = _env_flag("X402_SELF_FACILITATE")
+X402_SELF_FACILITATOR_KEY: str = _get_secret("x402_facilitator_key", "X402_FACILITATOR_KEY")
+X402_SELF_FACILITATOR_RPC: str = _env("X402_FACILITATOR_RPC")
 if X402_SELF_FACILITATE and not (X402_SELF_FACILITATOR_KEY and X402_SELF_FACILITATOR_RPC):
     logger.warning(
         "X402_SELF_FACILITATE=1 but X402_FACILITATOR_KEY and/or "
@@ -365,6 +354,7 @@ __all__ = [
     "X402_SELF_FACILITATOR_KEY",
     "X402_SELF_FACILITATOR_RPC",
     "X402_TIMEOUT_SECONDS",
+    "X402_UNCONFIGURED_WALLET",
     "X402_WALLET",
     "_NATIVE_ASSETS",
     "AssetUsdQuote",
@@ -387,7 +377,7 @@ __all__ = [
     "_encode_payment_required_body",
     "_encode_payment_response",
     "_env_flag",
-    "_env_or_legacy",
+    "_env",
     "_facilitator_router",
     "_from_atomic",
     "_get_secret",

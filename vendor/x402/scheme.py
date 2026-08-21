@@ -31,7 +31,7 @@ from x402 import (
     X402_DEFAULT_NETWORK,
     X402_NETWORK_WALLETS,
     X402_WALLET,
-    _env_or_legacy,
+    _env,
 )
 
 logger = logging.getLogger(__name__)
@@ -463,13 +463,13 @@ X402_ASSET_USD_PER_UNIT: dict[str, float] = {
     "USDC": 1.0,
     "USDT": 1.0,
     "DAI": 1.0,
-    "ETH": float(_env_or_legacy("X402_USD_PER_UNIT_ETH", "PRY_X402_USD_PER_UNIT_ETH", "2500")),
-    "WETH": float(_env_or_legacy("X402_USD_PER_UNIT_WETH", "PRY_X402_USD_PER_UNIT_WETH", "2500")),
-    "ARB": float(_env_or_legacy("X402_USD_PER_UNIT_ARB", "PRY_X402_USD_PER_UNIT_ARB", "0.6")),
-    "SOL": float(_env_or_legacy("X402_USD_PER_UNIT_SOL", "PRY_X402_USD_PER_UNIT_SOL", "140")),
-    "MATIC": float(_env_or_legacy("X402_USD_PER_UNIT_MATIC", "PRY_X402_USD_PER_UNIT_MATIC", "0.4")),
-    "POL": float(_env_or_legacy("X402_USD_PER_UNIT_POL", "PRY_X402_USD_PER_UNIT_POL", "0.4")),
-    "TRX": float(_env_or_legacy("X402_USD_PER_UNIT_TRX", "PRY_X402_USD_PER_UNIT_TRX", "0.15")),
+    "ETH": float(_env("X402_USD_PER_UNIT_ETH", "2500")),
+    "WETH": float(_env("X402_USD_PER_UNIT_WETH", "2500")),
+    "ARB": float(_env("X402_USD_PER_UNIT_ARB", "0.6")),
+    "SOL": float(_env("X402_USD_PER_UNIT_SOL", "140")),
+    "MATIC": float(_env("X402_USD_PER_UNIT_MATIC", "0.4")),
+    "POL": float(_env("X402_USD_PER_UNIT_POL", "0.4")),
+    "TRX": float(_env("X402_USD_PER_UNIT_TRX", "0.15")),
 }
 
 # Live price oracle. The fetcher is REAL and wired: with a provider
@@ -480,9 +480,9 @@ X402_ASSET_USD_PER_UNIT: dict[str, float] = {
 # prices unless an operator configures a live source — is preserved.
 # Re-read from env per call so tests can toggle providers without reloading
 # the module.
-X402_ORACLE_URL: str = _env_or_legacy("X402_ORACLE_URL", "PRY_X402_ORACLE_URL")
-X402_ORACLE_SOURCE: str = _env_or_legacy("X402_ORACLE_SOURCE", "PRY_X402_ORACLE_SOURCE")
-X402_ORACLE_TTL_SECONDS: float = float(_env_or_legacy("X402_ORACLE_TTL", "PRY_X402_ORACLE_TTL", "60"))
+X402_ORACLE_URL: str = _env("X402_ORACLE_URL")
+X402_ORACLE_SOURCE: str = _env("X402_ORACLE_SOURCE")
+X402_ORACLE_TTL_SECONDS: float = float(_env("X402_ORACLE_TTL", "60"))
 
 COINGECKO_SIMPLE_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price"
 
@@ -519,12 +519,11 @@ def oracle_source_label() -> str:
 
     ``"custom"`` (``X402_ORACLE_URL``), ``"coingecko"`` /
     ``"dexscreener"`` (``X402_ORACLE_SOURCE``), or ``"static-default"``
-    when no live provider is configured. Legacy ``PRY_X402_*`` names are
-    honored as fallbacks.
+    when no live provider is configured.
     """
-    if _env_or_legacy("X402_ORACLE_URL", "PRY_X402_ORACLE_URL") or X402_ORACLE_URL:
+    if _env("X402_ORACLE_URL") or X402_ORACLE_URL:
         return "custom"
-    source = _env_or_legacy("X402_ORACLE_SOURCE", "PRY_X402_ORACLE_SOURCE", X402_ORACLE_SOURCE)
+    source = _env("X402_ORACLE_SOURCE", X402_ORACLE_SOURCE)
     if source in ("coingecko", "dexscreener"):
         return source
     return "static-default"
@@ -573,17 +572,15 @@ async def _fetch_oracle_price(asset: str, network: str = "") -> float | None:
     2. ``X402_ORACLE_SOURCE`` set to ``coingecko`` → CoinGecko
         ``/simple/price?ids={id}&vs_currencies=usd``;
     3. otherwise None — no live provider configured (static defaults).
-
-    Legacy ``PRY_X402_ORACLE_*`` env vars are honored as fallbacks.
     """
-    oracle_url = _env_or_legacy("X402_ORACLE_URL", "PRY_X402_ORACLE_URL") or X402_ORACLE_URL
+    oracle_url = _env("X402_ORACLE_URL") or X402_ORACLE_URL
     asset = asset.upper()
     if oracle_url:
         url = f"{oracle_url.rstrip('/')}/price/{asset}"
         if network:
             url += f"?network={network}"
     else:
-        source = _env_or_legacy("X402_ORACLE_SOURCE", "PRY_X402_ORACLE_SOURCE", X402_ORACLE_SOURCE)
+        source = _env("X402_ORACLE_SOURCE", X402_ORACLE_SOURCE)
         if source not in ("coingecko", "dexscreener"):
             return None
         coingecko_id = COINGECKO_ASSET_IDS.get(asset)
@@ -591,7 +588,7 @@ async def _fetch_oracle_price(asset: str, network: str = "") -> float | None:
             return None
         url = f"{COINGECKO_SIMPLE_PRICE_URL}?ids={coingecko_id}&vs_currencies=usd"
     try:
-        timeout = float(_env_or_legacy("X402_ORACLE_TIMEOUT", "PRY_X402_ORACLE_TIMEOUT", "5"))
+        timeout = float(_env("X402_ORACLE_TIMEOUT", "5"))
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(url)
             response.raise_for_status()
@@ -633,7 +630,7 @@ async def get_asset_usd_price(asset: str, network: str = "") -> AssetUsdQuote:
         return AssetUsdQuote(usd=static if static and static > 0 else 1.0, source="static-default")
     cache_key = (source_key, asset, network)
     now = time.monotonic()
-    ttl = float(_env_or_legacy("X402_ORACLE_TTL", "PRY_X402_ORACLE_TTL", str(X402_ORACLE_TTL_SECONDS)))
+    ttl = float(_env("X402_ORACLE_TTL", str(X402_ORACLE_TTL_SECONDS)))
     entry = _oracle_cache.get(cache_key)
     if entry is not None and now - entry[0] < ttl:
         return AssetUsdQuote(usd=entry[1], source="oracle")
@@ -655,7 +652,7 @@ async def probe_oracle() -> tuple[bool, str]:
     label from :func:`oracle_source_label` (``"static-default"`` when no live
     provider is configured). Used by ``/v1/x402/health``.
     """
-    asset = _env_or_legacy("X402_ORACLE_PROBE_ASSET", "PRY_X402_ORACLE_PROBE_ASSET", "ETH")
+    asset = _env("X402_ORACLE_PROBE_ASSET", "ETH")
     quote = await get_asset_usd_price(asset)
     return quote.source == "oracle", oracle_source_label()
 
@@ -942,7 +939,7 @@ def build_multi_asset_accepts(
     USD-per-unit conversion are skipped — they cannot be quoted honestly.
     """
     price_info = X402_PRICING.get(operation, {"price_usd": 0.001, "description": operation})
-    resource_url = resource or f"https://pry.dev/api/{operation}"
+    resource_url = resource or f"https://coffer.example/api/{operation}"
     accepts: list[dict[str, Any]] = []
     for network_id, assets in SUPPORTED_ASSETS.items():
         for asset, entry in assets.items():
@@ -1012,7 +1009,7 @@ def build_payment_required(
     """
     price_info = X402_PRICING.get(operation, {"price_usd": 0.001, "description": operation})
     amount_atomic = _to_atomic(price_info["price_usd"], X402_DEFAULT_ASSET)
-    resource_url = resource or f"https://pry.dev/api/{operation}"
+    resource_url = resource or f"https://coffer.example/api/{operation}"
 
     if accepts is None:
         if multi_asset:
@@ -1088,7 +1085,7 @@ def _legacy_payment_request(
         "payment_id": payment_id or uuid.uuid4().hex[:12],
         "scheme": X402Scheme.EXACT.value,
         "network": X402_DEFAULT_NETWORK,
-        "resource": f"https://pry.dev/api/{operation}",
+        "resource": f"https://coffer.example/api/{operation}",
         "operation": operation,
         "description": price_info.get("description", operation),
         "maxAmountRequired": str(int(price_info["price_usd"] * 1_000_000)),

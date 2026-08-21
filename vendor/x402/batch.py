@@ -51,7 +51,7 @@ async def create_batch_payment(operations: list[str]) -> dict[str, Any]:
     batch_id = f"batch_{uuid.uuid4().hex[:12]}"
     payment_required = build_payment_required(
         operation=valid_ops[0],
-        resource=f"https://pry.dev/api/batch?ops={','.join(valid_ops)}",
+        resource=f"https://coffer.example/api/batch?ops={','.join(valid_ops)}",
         description=f"Batch payment for {len(valid_ops)} operations",
     )
     # Override the accepts amount to the batch total
