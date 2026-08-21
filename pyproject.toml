@@ -19,25 +19,40 @@ keywords = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "fastmcp>=2.0",
-    "fastapi>=0.100",
-    "uvicorn[standard]>=0.30",
-    "eth-account>=0.13",
-    "eth-keys>=0.6",
-    "eth-utils>=5.2",
-    "redis>=5",
-    "httpx>=0.28",
-    "pydantic>=2.0",
+    # Dep floors (2026-08-21 pip-audit hardening): each was raised to the
+    # exact version installed in CI that imports + passes the 19-test suite.
+    # A fresh/upgrade resolve can no longer land on a known-vulnerable release:
+    #   - fastapi>=0.100 floor admitted 0.100.0 (PYSEC-2024-38) via starlette
+    #     0.27.0 (PYSEC-2026-161/248/249/1941/1943/2280/2281) -> floor now 0.141.1.
+    #   - pydantic>=2.0 floor admitted pre-2.7 2.x (email/deprecation DoS
+    #     PYSEC-2024-2522); floor now 2.13.4 (pydantic-core 2.46.4).
+    #   - httpx>=0.28 admitted 0.28.0 (cookie-header leak, fixed 0.28.1);
+    #     floor now 0.28.1.
+    #   - ethereum (eth-account 0.13.7 / eth-keys 0.7.0 / eth-utils 5.3.1),
+    #     redis 8.0.0, uvicorn 0.52.3, fastmcp 3.4.5: no CVEs at current
+    #     versions; floors raised to CI-tested versions for reproducibility.
+    # [REVIEW] Starlette is still unbounded (transitive via fastapi >=0.141.1
+    # pulls starlette >=1.0 where the PYSEC-2026 fixes live); do not downgrade
+    # fastapi below 0.141.1 or vulnerable starlette 0.2x/0.3x re-enters.
+    "fastmcp>=3.4.5",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.3",
+    "eth-account>=0.13.7",
+    "eth-keys>=0.7.0",
+    "eth-utils>=5.3.1",
+    "redis>=8.0.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.4",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ruff>=0.8.0",
-    "mypy>=1.13.0",
-    "pytest>=8.3.0",
-    "pytest-asyncio>=0.24",
-    "httpx>=0.28",
-    "respx>=0.21",
+    "ruff>=0.15.19",
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=0.25.3",
+    "httpx>=0.28.1",
+    "respx>=0.23.1",
 ]
 
 [tool.ruff]
