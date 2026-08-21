@@ -113,7 +113,9 @@ async def test_verify_external_bare_success_not_verified() -> None:
     Requires an explicit verification field (isValid/verified). Regression: a
     previous build accepted ``data.get("success")`` as a verification signal.
     """
-    from app.domain.x402.service import FacilitatorConfig, FacilitatorRouter
+    from app.domain.x402.external_verify import verify_external
+    from app.domain.x402.facilitator_config import FacilitatorConfig
+    from app.domain.x402.facilitator_router import FacilitatorRouter
 
     cfg = FacilitatorConfig(
         name="stub-bare-success",
@@ -125,7 +127,7 @@ async def test_verify_external_bare_success_not_verified() -> None:
         respx.post("https://stub.example/verify").mock(
             return_value=httpx.Response(200, json={"success": True})
         )
-        res = await router._verify_external("pid_h3", "0xtx_h3", "eip155:8453", "USDC", 0.001)
+        res = await verify_external(router, "pid_h3", "0xtx_h3", "eip155:8453", "USDC", 0.001)
     assert res["verified"] is False, res
     assert res["settlement"] is None, res
 
@@ -134,9 +136,9 @@ async def test_verify_external_bare_success_not_verified() -> None:
 
 
 def _normalize(data: dict[str, Any]) -> dict[str, Any]:
-    from app.domain.x402.service import FacilitatorRouter
+    from app.domain.x402.external_verify import normalize_settlement
 
-    return FacilitatorRouter._normalize_settlement(data, "pid_m2", "0xtx_m2", "eip155:8453", "stub")
+    return normalize_settlement(data, "pid_m2", "0xtx_m2", "eip155:8453", "stub")
 
 
 def test_normalize_settlement_empty_body_is_not_success() -> None:

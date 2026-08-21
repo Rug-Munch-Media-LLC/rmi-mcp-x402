@@ -243,9 +243,16 @@ def register_gas_sponsoring_facilitator(
         fac = GasSponsoringFacilitator(key=network, payment=payment, sponsor_impl=sponsor_impl)
         try:
             prepped = await fac.prepare_payment()
+            # H1 fix: only verified=True when a real sponsor is configured
+            # (scaffolded == "ready"). Otherwise the payment is NOT settled.
+            is_settled = prepped.get("scaffolded") == "ready"
             return VerifyResult(
-                verified=True,
-                reason=f"scaffolded:{prepped['scaffolded']} flow={prepped['sponsor_flow']}",
+                verified=is_settled,
+                reason=(
+                    ""
+                    if is_settled
+                    else f"scaffolded:{prepped['scaffolded']} flow={prepped['sponsor_flow']}"
+                ),
                 asset=(payment or {}).get("asset") or "",
                 network=network,
             )
