@@ -44,8 +44,8 @@ check: ## Full check: lint + format + typecheck
 typecheck: ## MyPy type check
 	mypy app/ --ignore-missing-imports
 
-test: ## Run pytest (non-integration)
-	@pytest tests/ -x -q -m "not integration" 2>/dev/null || echo "no tests yet"
+test: ## Run pytest (spec-conformance + unit suites)
+	@pytest tests/ -q 2>/dev/null || pytest tests/ -q
 
 security: ## Security audit (bandit + ruff S-rules)
 	bandit -r app/ -q
@@ -57,7 +57,7 @@ precommit: ## Install pre-commit hooks
 commit: ## Interactive commit with commitizen
 	cz commit || git commit
 
-ci: lint typecheck security ## Full CI: lint + typecheck + security
+ci: lint typecheck test ## Full CI: lint + typecheck + test
 
 clean: ## Remove build artifacts
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true

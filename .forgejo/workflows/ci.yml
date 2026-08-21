@@ -107,7 +107,9 @@ jobs:
           uv venv --python ${{ env.PYTHON_VERSION }} .venv
       - name: Install deps
         run: |
-          uv pip install --python .venv/bin/python pytest pytest-asyncio pytest-cov httpx -e .
+          uv pip install --python .venv/bin/python ruff mypy pytest pytest-asyncio pytest-cov httpx -e .
+      - name: Run make ci (lint + typecheck + test)
+        run: source .venv/bin/activate && make ci
       - name: Run tests with coverage
         run: |
           source .venv/bin/activate
