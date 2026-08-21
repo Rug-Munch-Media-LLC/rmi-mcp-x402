@@ -276,6 +276,11 @@ def create_app(*args: Any, **kwargs: Any) -> Any:
 
     app.include_router(register_dashboard_router())
 
+    # Agent identity browse surface (ERC-8004 / a2a-x402 shaped).
+    from app.domain.x402.extensions.agent_identity import register_agents_router
+
+    app.include_router(register_agents_router())
+
     app.add_middleware(
         X402Middleware,
         free_paths=set(cfg.free_paths),

@@ -107,6 +107,24 @@ async def verify(request: Request) -> JSONResponse:
         amount_usd,
     )
 
+    # Agent-identity attribution (W6): optional declared identity, recorded
+    # only for VERIFIED payments — attribution bookkeeping, never authz.
+    if result.get("verified"):
+        try:
+            from app.domain.x402.extensions.agent_identity import (
+                extract_agent_identity,
+                get_agent_registry,
+            )
+
+            identity = extract_agent_identity(payload)
+            get_agent_registry().record_payment(
+                wallet=str(result.get("signer") or payload.get("payer") or payment_id),
+                identity=identity,
+                amount_atomic=int(result.get("amount_atomic", 0) or 0),
+            )
+        except Exception:  # noqa: BLE001 — attribution never breaks verification
+            pass
+
     if not result.get("verified"):
         body = payment_required_body(operation="api_access")
         headers = payment_required_headers(body)
