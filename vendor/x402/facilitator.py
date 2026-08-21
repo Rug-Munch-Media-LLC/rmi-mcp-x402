@@ -32,8 +32,9 @@ from x402 import (
     X402_SELF_FACILITATOR_KEY,
     X402_SELF_FACILITATOR_RPC,
     X402_TIMEOUT_SECONDS,
+    X402_UNCONFIGURED_WALLET,
     X402_WALLET,
-    _env_or_legacy,
+    _env,
 )
 from x402.scheme import (
     _NATIVE_ASSETS,
@@ -77,32 +78,24 @@ class FacilitatorConfig:
 DEFAULT_FACILITATORS: list[FacilitatorConfig] = [
     FacilitatorConfig(
         name="coinbase",
-        verify_url=_env_or_legacy(
-            "X402_COINBASE_VERIFY", "PRY_X402_COINBASE_VERIFY", "https://x402.org/facilitator/verify"
-        ),
-        settle_url=_env_or_legacy(
-            "X402_COINBASE_SETTLE", "PRY_X402_COINBASE_SETTLE", "https://x402.org/facilitator/settle"
-        ),
-        priority=int(_env_or_legacy("X402_COINBASE_PRIORITY", "PRY_X402_COINBASE_PRIORITY", "1")),
-        enabled=_env_or_legacy("X402_COINBASE_ENABLED", "PRY_X402_COINBASE_ENABLED", "true").lower() in ("1", "true"),
+        verify_url=_env("X402_COINBASE_VERIFY", "https://x402.org/facilitator/verify"),
+        settle_url=_env("X402_COINBASE_SETTLE", "https://x402.org/facilitator/settle"),
+        priority=int(_env("X402_COINBASE_PRIORITY", "1")),
+        enabled=_env("X402_COINBASE_ENABLED", "true").lower() in ("1", "true"),
     ),
     FacilitatorConfig(
         name="payai",
-        verify_url=_env_or_legacy(
-            "X402_PAYAI_VERIFY", "PRY_X402_PAYAI_VERIFY", "https://facilitator.payai.network/verify"
-        ),
-        settle_url=_env_or_legacy(
-            "X402_PAYAI_SETTLE", "PRY_X402_PAYAI_SETTLE", "https://facilitator.payai.network/settle"
-        ),
-        priority=int(_env_or_legacy("X402_PAYAI_PRIORITY", "PRY_X402_PAYAI_PRIORITY", "2")),
-        enabled=_env_or_legacy("X402_PAYAI_ENABLED", "PRY_X402_PAYAI_ENABLED", "true").lower() in ("1", "true"),
+        verify_url=_env("X402_PAYAI_VERIFY", "https://facilitator.payai.network/verify"),
+        settle_url=_env("X402_PAYAI_SETTLE", "https://facilitator.payai.network/settle"),
+        priority=int(_env("X402_PAYAI_PRIORITY", "2")),
+        enabled=_env("X402_PAYAI_ENABLED", "true").lower() in ("1", "true"),
     ),
     FacilitatorConfig(
         name="cloudflare",
-        verify_url=_env_or_legacy("X402_CF_VERIFY", "PRY_X402_CF_VERIFY"),
-        settle_url=_env_or_legacy("X402_CF_SETTLE", "PRY_X402_CF_SETTLE"),
-        priority=int(_env_or_legacy("X402_CF_PRIORITY", "PRY_X402_CF_PRIORITY", "3")),
-        enabled=_env_or_legacy("X402_CF_ENABLED", "PRY_X402_CF_ENABLED", "false").lower() in ("1", "true"),
+        verify_url=_env("X402_CF_VERIFY"),
+        settle_url=_env("X402_CF_SETTLE"),
+        priority=int(_env("X402_CF_PRIORITY", "3")),
+        enabled=_env("X402_CF_ENABLED", "false").lower() in ("1", "true"),
     ),
 ]
 
@@ -193,7 +186,7 @@ class FacilitatorRouter:
         enabled facilitator with a verify URL.
         """
         wallet = (X402_WALLET or "").strip()
-        wallet_configured = bool(wallet and wallet != "pry-default-wallet")
+        wallet_configured = bool(wallet and wallet != X402_UNCONFIGURED_WALLET)
         mode = "self_hosted" if self.self_hosted else "external"
         if self.self_hosted:
             fac = self._get_self_facilitator()
@@ -476,7 +469,7 @@ class FacilitatorRouter:
                 "network": network_id,
             }
         recipient = (X402_NETWORK_WALLETS.get(network_id) or X402_WALLET or "").strip()
-        if not recipient or recipient == "pry-default-wallet":
+        if not recipient or recipient == X402_UNCONFIGURED_WALLET:
             return {
                 "verified": False,
                 "reason": (
@@ -757,7 +750,7 @@ class FacilitatorRouter:
         value directly to the server wallet. Unknown assets fail closed.
         """
         pay_to = (X402_WALLET or "").lower()
-        if not pay_to or pay_to == "pry-default-wallet":
+        if not pay_to or pay_to == X402_UNCONFIGURED_WALLET:
             return False, "server wallet not configured"
         tx_to = str(tx.get("to") or "").lower()
         tokens = EIP7702_TOKEN_ADDRESSES.get(network, {})

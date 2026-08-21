@@ -62,8 +62,9 @@ from x402 import (
     X402_SELF_FACILITATOR_KEY,
     X402_SELF_FACILITATOR_RPC,
     X402_TIMEOUT_SECONDS,
+    X402_UNCONFIGURED_WALLET,
     X402_WALLET,
-    _env_or_legacy,
+    _env,
 )
 from x402.scheme import (
     X402Scheme,
@@ -116,8 +117,6 @@ _TRANSFER_FROM_SELECTOR = keccak(text="transferFrom(address,address,uint256)")[:
 # unavailable (USDC transferWithAuthorization costs ~65k; 100k is safe).
 _DEFAULT_TX_GAS = 100_000
 
-# Placeholder wallet used before an operator configures a real payTo address.
-_PLACEHOLDER_WALLET = "pry-default-wallet"
 
 
 @dataclass
@@ -481,7 +480,7 @@ class SelfFacilitator:
     Args:
         pay_to: Receiving wallet. Must equal the authorization's ``to``.
             Defaults to ``X402_WALLET``; verification fails closed while the
-            wallet is the ``pry-default-wallet`` placeholder.
+            wallet is the ``coffer-unconfigured-wallet`` placeholder.
         facilitator_key: EVM private key used to pay gas when broadcasting
             settlement. Optional for verify; required for settle.
         rpc_url: JSON-RPC endpoint for settlement broadcast (optional; verify
@@ -514,8 +513,8 @@ class SelfFacilitator:
         self.pay_to = self._normalize_address(pay_to or X402_WALLET)
         self.facilitator_key = facilitator_key or X402_SELF_FACILITATOR_KEY
         self.rpc_url = rpc_url or X402_SELF_FACILITATOR_RPC
-        self.domain_name = domain_name or _env_or_legacy("X402_EIP712_NAME", "PRY_X402_EIP712_NAME", "USD Coin")
-        self.domain_version = domain_version or _env_or_legacy("X402_EIP712_VERSION", "PRY_X402_EIP712_VERSION", "2")
+        self.domain_name = domain_name or _env("X402_EIP712_NAME", "USD Coin")
+        self.domain_version = domain_version or _env("X402_EIP712_VERSION", "2")
         self.timeout_seconds = timeout_seconds
         self.nonces = NonceStore(
             path=nonce_path or X402_DIR / "self_facilitator_nonces.json",
@@ -660,7 +659,7 @@ class SelfFacilitator:
                 network=network,
             )
 
-        if self.pay_to == _PLACEHOLDER_WALLET or not self.pay_to:
+        if self.pay_to == X402_UNCONFIGURED_WALLET or not self.pay_to:
             return VerifyResult(False, "server wallet (payTo) not configured", asset=asset, network=network)
 
         chain_id = _chain_id_for(network)
@@ -888,7 +887,7 @@ class SelfFacilitator:
                 error_detail="no authorization and payment not pre-approved",
             )
 
-        if self.pay_to == _PLACEHOLDER_WALLET or not self.pay_to:
+        if self.pay_to == X402_UNCONFIGURED_WALLET or not self.pay_to:
             return SettleOutcome(
                 False,
                 error_code=SettleErrorCode.NOT_SETTLABLE.value,
