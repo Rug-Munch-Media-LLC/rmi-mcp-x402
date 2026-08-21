@@ -59,9 +59,8 @@ from .service import (  # noqa: F401  (re-export)
 # Core health registration is guarded: app.core.health may not exist yet in a
 # worktree mid-refactor (it is also referenced by app/mcp/server.py). [REVIEW]
 try:
-    from app.core.health import DomainHealth  # type: ignore
-
     from app.core import health as _health_mod  # type: ignore
+    from app.core.health import DomainHealth  # type: ignore
 
     async def _health_check() -> DomainHealth:
         """x402 health: priced ops + middleware available + facilitator readiness."""
@@ -83,7 +82,7 @@ try:
             return DomainHealth(name="x402", healthy=False, error=str(e))
 
     _health_mod.register_health_check("x402", _health_check)
-except ModuleNotFoundError:  # pragma: no cover - app.core.health not present yet
+except (ModuleNotFoundError, ImportError):  # pragma: no cover - app.core.health not present yet
     pass
 
 __all__ = [
