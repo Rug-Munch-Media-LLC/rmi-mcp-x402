@@ -193,7 +193,14 @@ class SelfFacilitator:
 
             digest = self._digest(auth, chain_id, token)
             sig_hex = str(auth.get("signature") or "").removeprefix("0x")
-            sig = eth_keys.Signature(bytes.fromhex(sig_hex))
+            raw_sig = bytearray(bytes.fromhex(sig_hex))
+            # EIP-155 v-normalization: eth_account/viem emit v ∈ {27, 28};
+            # eth_keys expects the recovery id {0, 1}. (Matches the settle
+            # path's normalization below — without this EVERY externally
+            # signed authorization fails verification.)
+            if len(raw_sig) == 65 and raw_sig[64] in (27, 28):
+                raw_sig[64] -= 27
+            sig = eth_keys.Signature(bytes(raw_sig))
             from_addr = to_checksum_address(str(auth.get("from") or ""))
             recovered = to_checksum_address(
                 eth_keys.PublicKey.recover_from_msg_hash(digest, sig).to_address()
