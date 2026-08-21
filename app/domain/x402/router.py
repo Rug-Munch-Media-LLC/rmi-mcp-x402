@@ -1,155 +1,202 @@
-"""T34 x402 Paid Tools Catalog.
+"""x402 HTTP router — spec-compliant 402-flow endpoints.
 
-Per v4.0 §T34. Endpoints:
-  GET  /api/v1/x402/catalog    — list all tools with pricing tiers
-  GET  /api/v1/x402/usage      — per-agent usage stats
-  GET  /api/v1/x402/receipts/{tx_hash}  — payment receipt
-  POST /api/v1/x402/verify     — verify a payment header
+Exposes the official x402 HTTP transport surface:
+
+- ``GET  /v1/x402/payment``  — 402 challenge: the spec header set
+  (``PAYMENT-REQUIRED`` base64 + ``X-Payment-Required`` + ``X-Payment-Options``)
+  and the ``{x402Version:1, accepts:[...]}`` body for a not-yet-paid caller.
+- ``POST /v1/x402/verify``   — delegate a payment proof to the
+  ``FacilitatorRouter`` (from :mod:`app.domain.x402.service`, agent3-owned);
+  on success the verified id is recorded caller-bound + TTL'd in the shared
+  :class:`PaymentStore` so replay with ``X-Payment-ID`` passes the middleware.
+- ``POST /v1/x402/settle``   — delegate settlement to the FacilitatorRouter.
+- ``GET  /v1/x402/health``   — honest acceptance/verification status.
+
+Holds NO verification logic itself — it only wires the middleware's payment
+store to the facilitator layer.
 """
+
 from __future__ import annotations
 
-import logging
+import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
-from app.catalog.service import get_catalog
 from app.domain.x402.middleware import (
-    PRICING,
-    get_tool_metadata,
-    get_tool_price_usd,
-    verify_payment_header,
-    verify_payment_on_chain,
+    HEADER_PAYMENT_REQUIRED,
+    HEADER_X_PAYMENT_ID,
+    HEADER_X_PAYMENT_OPTIONS,
+    HEADER_X_PAYMENT_REQUIRED,
+    PAYMENT_VALIDITY_SECONDS,
+    PaymentStore,
+    caller_key_from_request,
+    get_default_store,
+    payment_required_body,
+    payment_required_headers,
 )
 
-router = APIRouter(prefix="/api/v1/x402", tags=["x402"])
+router = APIRouter(prefix="/v1/x402", tags=["x402"])
+
+VERIFICATION_STATUS = {
+    "evm": "live",
+    "solana": "live",
+    "tron": "scaffolded:needs_facilitator",
+}
 
 
-class CatalogResponse(BaseModel):
-    server: str = "rugmunch-intelligence"
-    version: str = "4.0"
-    tools: list[dict[str, Any]] = Field(default_factory=list)
-    payment_protocol: str = "x402"
+def _get_facilitator_router() -> Any:
+    """Return agent3's ``FacilitatorRouter`` (imported lazily from service.py).
+
+    Imported lazily — not at module load — so this router keeps working and
+    type-checks clean if the interface is still landing in ``service.py``.
+    """
+    from app.domain.x402.service import FacilitatorRouter  # type: ignore[attr-defined]
+
+    return FacilitatorRouter()
 
 
-class UsageResponse(BaseModel):
-    agent_id: str
-    daily_calls: int
-    free_limit: int
-    paid_calls: int
-    total_usd: float
-    recent_receipts: list[dict[str, Any]] = Field(default_factory=list)
+def _get_store() -> PaymentStore:
+    """Return the shared, process-wide verified-payment store."""
+    return get_default_store()
 
 
-class ReceiptResponse(BaseModel):
-    tx_hash: str
-    tool: str
-    agent_id: str | None = None
-    amount_usd: float
-    chain: str | None = None
-    paid_at: str | None = None
-    tier: str | None = None
+def _402_challenge(resource: str = "") -> JSONResponse:
+    """Build a spec-compliant 402 response for an unpaid caller."""
+    body = payment_required_body(resource=resource, operation="api_access")
+    headers = {
+        HEADER_PAYMENT_REQUIRED: payment_required_headers(body)[HEADER_PAYMENT_REQUIRED],
+        HEADER_X_PAYMENT_REQUIRED: "true",
+        HEADER_X_PAYMENT_OPTIONS: "x402",
+    }
+    return JSONResponse(status_code=402, content=body, headers=headers)
 
 
-@router.get("/catalog", response_model=CatalogResponse)
-async def catalog() -> CatalogResponse:
-    """List all paid tools with pricing tiers."""
-    return CatalogResponse(tools=[get_tool_metadata(t) for t in PRICING])
-
-
-@router.get("/usage", response_model=UsageResponse)
-async def usage(request: Request) -> UsageResponse:
-    """Per-agent usage stats: calls made, $ spent, top tools."""
-    catalog = get_catalog()
-    await catalog._init_stores()
-    agent_id = request.headers.get("X-Agent-Id") or request.headers.get("X-Api-Key") or "anon"
-    daily_calls = 0
-    paid_calls = 0
-    total_usd = 0.0
-    recent: list[dict] = []
-    if catalog._health.redis:
-        try:
-            from datetime import UTC, datetime
-            day = datetime.now(UTC).strftime("%Y%m%d")
-            key = f"x402:rl:{agent_id}:{day}"
-            daily_calls = int(await catalog._redis.get(key) or 0)
-        except Exception:
-            pass
-    if catalog._health.postgres:
-        try:
-            async with catalog._pg_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT tx_hash, tool, amount_usd, paid_at FROM x402_receipts "
-                    "WHERE agent_id = $1 ORDER BY paid_at DESC LIMIT 10",
-                    agent_id,
-                )
-            for r in rows:
-                paid_calls += 1
-                total_usd += float(r["amount_usd"] or 0)
-                recent.append({
-                    "tx_hash": r["tx_hash"],
-                    "tool": r["tool"],
-                    "amount_usd": float(r["amount_usd"] or 0),
-                    "paid_at": r["paid_at"].isoformat() if r["paid_at"] else None,
-                })
-        except Exception as e:
-            logging.getLogger(__name__).warning(f"usage_query_fail: {e}")
-    return UsageResponse(
-        agent_id=agent_id, daily_calls=daily_calls, free_limit=5,
-        paid_calls=paid_calls, total_usd=round(total_usd, 4),
-        recent_receipts=recent,
-    )
-
-
-@router.get("/receipts/{tx_hash}", response_model=ReceiptResponse)
-async def receipt(tx_hash: str) -> ReceiptResponse:
-    """Payment receipt for a specific on-chain tx."""
-    catalog = get_catalog()
-    await catalog._init_stores()
-    if not catalog._health.postgres:
-        raise HTTPException(503, "postgres unavailable")
+async def _read_json(request: Request) -> dict[str, Any]:
     try:
-        async with catalog._pg_pool.acquire() as conn:
-            r = await conn.fetchrow(
-                "SELECT * FROM x402_receipts WHERE tx_hash=$1", tx_hash
-            )
-        if not r:
-            raise HTTPException(404, "receipt not found")
-        d = dict(r)
-        return ReceiptResponse(
-            tx_hash=d["tx_hash"],
-            tool=d["tool"],
-            agent_id=d.get("agent_id"),
-            amount_usd=float(d.get("amount_usd", 0)),
-            chain=d.get("chain"),
-            paid_at=d["paid_at"].isoformat() if d.get("paid_at") else None,
-            tier=d.get("tier"),
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"receipt_query_fail: {e}")
+        raw = await request.body()
+        return json.loads(raw or b"{}")
+    except (json.JSONDecodeError, RuntimeError):
+        return {}
+
+
+def _amount(payload: dict[str, Any]) -> float:
+    try:
+        return float(payload.get("amount_usd", payload.get("amountUsd", 0.0)) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+@router.get("/payment")
+async def payment_challenge() -> JSONResponse:
+    """402 challenge: advertise what this server accepts for a paid call."""
+    return _402_challenge()
 
 
 @router.post("/verify")
-async def verify_payment(request: Request) -> dict:
-    """Verify an X-Payment header for a given tool."""
-    body = await request.json()
-    tool = body.get("tool", "")
-    x_payment = body.get("x_payment", "")
-    if tool not in PRICING:
-        raise HTTPException(404, f"unknown tool: {tool}")
-    if get_tool_price_usd(tool) == 0:
-        return {"valid": True, "tier": "free", "amount_usd": 0}
-    decoded = verify_payment_header(x_payment, get_tool_price_usd(tool))
-    if not decoded:
-        return {"valid": False, "reason": "invalid format"}
-    tx_hash, _ = decoded
-    valid = await verify_payment_on_chain(tx_hash, get_tool_price_usd(tool))
-    return {
-        "valid": valid,
-        "tool": tool,
-        "amount_usd": get_tool_price_usd(tool),
-        "tx_hash": tx_hash,
-    }
+async def verify(request: Request) -> JSONResponse:
+    """Verify a payment proof via the FacilitatorRouter; record it on success."""
+    payload = await _read_json(request)
+    payment_id = str(payload.get("payment_id") or payload.get("paymentId") or "")
+    tx_hash = str(payload.get("tx_hash") or payload.get("transactionHash") or "")
+    network = str(payload.get("network") or "")
+    asset = str(payload.get("asset") or "")
+    amount_usd = _amount(payload)
+
+    if not payment_id or not tx_hash:
+        return JSONResponse(
+            status_code=400,
+            content={"x402Version": 1, "error": "payment_id and tx_hash are required"},
+        )
+
+    result = await _get_facilitator_router().verify(
+        payment_id,
+        tx_hash,
+        network,
+        asset,
+        amount_usd,
+    )
+
+    if not result.get("verified"):
+        body = payment_required_body(operation="api_access")
+        headers = payment_required_headers(body)
+        return JSONResponse(
+            status_code=402,
+            content={
+                "x402Version": 1,
+                "error": result.get("reason", "payment verification failed"),
+                **body,
+            },
+            headers=headers,
+        )
+
+    _get_store().record(
+        payment_id=payment_id,
+        caller_key=caller_key_from_request(request),
+        tx_hash=tx_hash,
+        network=network or str(result.get("network") or ""),
+        asset=asset or str(result.get("asset") or ""),
+        amount_usd=float(result.get("amount_usd") or amount_usd),
+        facilitator=str(result.get("facilitator") or ""),
+        verified=True,
+    )
+    return JSONResponse(
+        content={
+            "verified": True,
+            "reason": result.get("reason", ""),
+            "facilitator": result.get("facilitator", ""),
+            "payment_id": payment_id,
+            "transaction": tx_hash,
+            "network": network or result.get("network", ""),
+            "asset": asset or result.get("asset", ""),
+            "amount_atomic": result.get("amount_atomic", ""),
+            "signer": result.get("signer", ""),
+            "settlement": result.get("settlement"),
+            "replay": {"header": HEADER_X_PAYMENT_ID, "value": payment_id},
+        }
+    )
+
+
+@router.post("/settle")
+async def settle(request: Request) -> JSONResponse:
+    """Settle a verified payment via the FacilitatorRouter."""
+    payload = await _read_json(request)
+    payment_id = str(payload.get("payment_id") or payload.get("paymentId") or "")
+    tx_hash = str(payload.get("tx_hash") or payload.get("transactionHash") or "")
+    network = str(payload.get("network") or "")
+    asset = str(payload.get("asset") or "")
+    amount_usd = _amount(payload)
+
+    if not payment_id or not tx_hash:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "payment_id and tx_hash are required"},
+        )
+
+    settlement = await _get_facilitator_router().settle(
+        payment_id,
+        tx_hash,
+        network,
+        asset,
+        amount_usd,
+    )
+    return JSONResponse(content=settlement)
+
+
+@router.get("/health")
+async def health() -> JSONResponse:
+    """Honest acceptance + verification status. Scaffolded chains are NEVER
+    reported as fully live."""
+    store = _get_store()
+    return JSONResponse(
+        content={
+            "status": "ok",
+            "x402Version": 1,
+            "verification_status": VERIFICATION_STATUS,
+            "payment_validity_seconds": PAYMENT_VALIDITY_SECONDS,
+            "active_payments": len(store),
+            "replay_header": HEADER_X_PAYMENT_ID,
+            "offer_header": HEADER_PAYMENT_REQUIRED,
+        }
+    )
