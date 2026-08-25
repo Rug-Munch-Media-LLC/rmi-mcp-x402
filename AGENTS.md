@@ -41,7 +41,7 @@ Model Context Protocol (MCP) server and x402 payment gateway for Rug Munch Intel
 3. **No data blobs.** Don't commit `*.zip`, `*.parquet`, model weights, sqlite files.
 4. **No file > 500 lines.** Split or refactor.
 5. **No mainnet RPC keys in source.** Use gopass and environment.
-6. **Coordinate with x402-gateway.** The x402 surface overlaps with the orphaned x402-gateway repo; consolidation pending.
+6. **x402 canon:** this repo is the MCP actor marketplace; Coffer (x402-coffer) is the facilitator. No gateway repo exists anymore.
 7. **Update STATUS.md before committing.** Builders must know where we are.
 8. **Read DECISIONS.md before architectural changes.** Don't repeat rejected designs.
 
@@ -71,5 +71,5 @@ See [PRODUCT.md](PRODUCT.md) and [ROADMAP.md](ROADMAP.md).
 ## Related Repos
 - `rmi-backend/` — security data source
 - `walletpress/` — wallet generation
-- `x402-gateway/` — orphaned, code overlap pending consolidation
+- x402-gateway: ARCHIVED/DELETED 2026-08-25 — do not reference
 - See [standards/PRODUCTS.md](https://git.rugmunch.io/RugMunchMedia/standards/raw/branch/main/PRODUCTS.md).
