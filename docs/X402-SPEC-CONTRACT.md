@@ -2,7 +2,7 @@
 
 > Canonical reference for bringing this repo's x402 implementation up to the
 > official x402 protocol. Extracted from the local reference implementation at
-> `/srv/work/repos/x402-py/x402/` (scheme.py, facilitator.py, middleware.py,
+> `x402-py package (x402/)` (scheme.py, facilitator.py, middleware.py,
 > self_facilitator.py, solana_verifier.py). **Read this file, not the web.**
 > The official spec also lives at https://docs.x402.org and the
 > `x402-foundation/x402` GitHub repo — but the local reference impl is the
@@ -161,5 +161,5 @@ exposes this so operators never mistake a scaffold for real settlement.
 | G10 | reimplements x402 from scratch | vendor `x402-py` OR delegate to its public API |
 
 **Preferred fix**: vendor the `x402-py` package (it's already a sibling repo at
-`/srv/work/repos/x402-py`) and have `app/domain/x402/` delegate to it, instead
+the x402-py package`) and have `app/domain/x402/` delegate to it, instead
 of reimplementing. This single change closes G1–G10 at once.
