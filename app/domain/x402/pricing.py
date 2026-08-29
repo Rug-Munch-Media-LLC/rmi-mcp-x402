@@ -269,16 +269,16 @@ def validate_client_amount(
 # ── Honest verification status (§6) ──────────────────────────────────────────
 
 # evm/solana have REAL on-chain verifiers -> live. TRON has no TRC-20 verifier
-# wired yet -> scaffolded, NEVER claimed verified. [REVIEW]
+# wired/exposed yet -> scaffolded, NEVER claimed verified. [REVIEW]
 VERIFICATION_STATUS: dict[str, str] = {
     "evm": "live",
     "solana": "live",
-    "tron": "live",
+    "tron": "scaffolded:needs_facilitator",
 }
 
 # Chains with no real settlement-verification (structure/price/asset validated
 # only). Payments here report "needs_facilitator", never verified. [REVIEW]
-SCAFFOLDED_NETWORKS: set[str] = set()
+SCAFFOLDED_NETWORKS: set[str] = {"tron:mainnet"}
 
 
 def network_verification_status(network: str) -> str:

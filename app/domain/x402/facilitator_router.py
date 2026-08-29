@@ -191,7 +191,10 @@ class FacilitatorRouter:
                 }
             return {"verified": True, "reason": "offline_mode", "settlement": None}
 
-        # TRON: real TRC-20 verifier (no longer scaffolded).
+        # TRON: verifier path exists, but the SCHEME status is
+        # scaffolded:needs_facilitator (see VERIFICATION_STATUS) — a payment is
+        # only ever claimed verified after a real on-chain TRC-20 check passes,
+        # and the health surface never reports TRON as "live".
         if network_family(network_id) == "tron":
             return await self._verify_tron(payment_id, tx_hash, network_id, asset, amount_usd)
 

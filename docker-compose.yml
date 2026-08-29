@@ -11,12 +11,15 @@ services:
     container_name: coffer
     restart: unless-stopped
     env_file:
-      - .env
+      - /srv/rmi-infra/.env.coffer
     environment:
       # Compose wires the managed redis into Coffer for nonce/replay.
       REDIS_URL: redis://redis:6379/0
     ports:
-      - "${X402_PORT:-8001}:8001"
+      # Hardened: bind the host port to loopback only. Pry reaches coffer over
+      # the shared `rmi` network (container-to-container via coffer:8001), not
+      # through a publicly-exposed host port.
+      - "127.0.0.1:${X402_PORT:-8001}:8001"
     depends_on:
       redis:
         condition: service_healthy
@@ -32,6 +35,7 @@ services:
       start_period: 15s
     networks:
       - coffer-net
+      - rmi
     # Minimal hardening: read-only rootfs (writes only to /dev/shm TMPFS).
     read_only: true
     tmpfs:
@@ -60,6 +64,11 @@ services:
 networks:
   coffer-net:
     driver: bridge
+  # Join the shared rmi network so the Pry stack (and other rmi services on
+  # rmi_network) can reach coffer by container/service name (e.g. coffer:8001).
+  rmi:
+    external: true
+    name: rmi_network
 
 volumes:
   redis-data:

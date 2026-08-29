@@ -139,7 +139,7 @@ async def test_health_wallet_and_readiness_agree(e2e: X402E2EHarness) -> None:
     status = r.json()["verification_status"]
     assert status["evm"] == "live"
     assert status["solana"] == "live"
-    assert status["tron"] == "live"
+    assert status["tron"] == "scaffolded:needs_facilitator"
 
     # readiness() carries the wallet-configured signal the surface advertises.
     ready = get_facilitator_router().readiness()

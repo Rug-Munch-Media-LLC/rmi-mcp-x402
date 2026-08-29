@@ -6,7 +6,7 @@ shim resolve to the *same* implementation the tests assert against, independent 
 what `x402` happens to be installed in the ambient environment.
 
 ## Provenance
-- Source: `/srv/work/repos/x402-py/x402/` (fleet reference checkout)
+- Source: `<x402-py>/x402/` (reference checkout)
 - Copied: 2026-08-21
 - Files: `__init__.py batch.py facilitator.py handler.py middleware.py scheme.py
   self_facilitator.py solana_verifier.py`

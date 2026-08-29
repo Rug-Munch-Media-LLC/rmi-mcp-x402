@@ -65,16 +65,14 @@ class AIGuardWrapper:
         try:
             import sys
 
-            sys.path.insert(0, "/srv/rugmuncher-backend/backend/app")
+            sys.path.insert(0, os.environ.get("RMI_BACKEND_PATH", "/backend/app"))
             from security.ai_guard import AIGuard
 
             self._guard = AIGuard()
             self.active = True
             logger.info("✅ AI Guard loaded from RugMunch security module")
         except Exception as e:
-            logger.warning(
-                f"⚠️ Using standalone AI Guard (external module unavailable: {e})"
-            )
+            logger.warning(f"⚠️ Using standalone AI Guard (external module unavailable: {e})")
             self._guard = None
             self.active = True  # Standalone still works
 
@@ -82,9 +80,7 @@ class AIGuardWrapper:
         """Check request for security violations."""
         # Check headers
         user_agent = request.headers.get("User-Agent", "").lower()
-        if any(
-            bot in user_agent for bot in ["sqlmap", "nikto", "nmap", "masscan", "zgrab"]
-        ):
+        if any(bot in user_agent for bot in ["sqlmap", "nikto", "nmap", "masscan", "zgrab"]):
             return False, "Security scanner detected"
 
         # Check body for POST/PUT/PATCH
@@ -676,12 +672,8 @@ class X402MCPServer:
             f"   Free: {len(b.free_bundles)} | Trial: {len(b.trial_bundles)} | Premium: {len(b.premium_bundles)}"
         )
         logger.info(f"   Endpoints: {b.total_endpoints}")
-        logger.info(
-            f"   Revenue/call: ${sum(b.price_usd for b in b.list_bundles()):.2f}"
-        )
-        logger.info(
-            f"   AI Guard: {'✅ Active' if self._ai_guard.active else '❌ Inactive'}"
-        )
+        logger.info(f"   Revenue/call: ${sum(b.price_usd for b in b.list_bundles()):.2f}")
+        logger.info(f"   AI Guard: {'✅ Active' if self._ai_guard.active else '❌ Inactive'}")
 
     def streamable_http_app(self) -> FastAPI:
         if self._app is not None:
@@ -716,22 +708,15 @@ class X402MCPServer:
                         "bundles": len(b.list_bundles()),
                         "free": len(b.free_bundles),
                         "trial": len(b.trial_bundles),
-                        "standard": len(
-                            [x for x in b.list_bundles() if x.tier == "standard"]
-                        ),
+                        "standard": len([x for x in b.list_bundles() if x.tier == "standard"]),
                         "premium": len(b.premium_bundles),
                         "endpoints": b.total_endpoints,
                     },
                     "ai_guard": self._ai_guard.active,
                     "chains": ["base", "solana"],
                     "facilitator": {
-                        "base_wallet": self._facilitator.base_config["wallet_address"][
-                            :20
-                        ]
-                        + "...",
-                        "solana_wallet": self._facilitator.solana_config[
-                            "wallet_address"
-                        ][:20]
+                        "base_wallet": self._facilitator.base_config["wallet_address"][:20] + "...",
+                        "solana_wallet": self._facilitator.solana_config["wallet_address"][:20]
                         + "...",
                     },
                 }
@@ -896,9 +881,7 @@ class X402MCPServer:
                                     "price_usd": bundle.price_usd,
                                     "payment_options": {
                                         "base": self._get_payment_req(bundle, "base"),
-                                        "solana": self._get_payment_req(
-                                            bundle, "solana"
-                                        ),
+                                        "solana": self._get_payment_req(bundle, "solana"),
                                     },
                                     "instructions": "Include X-Payment (Base) or X-Solana-Payment (Solana) header with transaction proof",
                                 },
@@ -920,9 +903,7 @@ class X402MCPServer:
 
     def _get_payment_req(self, bundle: X402Bundle, chain: str) -> dict[str, Any]:
         facilitator = (
-            self._facilitator.base_config
-            if chain == "base"
-            else self._facilitator.solana_config
+            self._facilitator.base_config if chain == "base" else self._facilitator.solana_config
         )
 
         if chain == "solana":

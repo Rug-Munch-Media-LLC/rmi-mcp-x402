@@ -31,9 +31,9 @@ def _load_tool_prices():
     gateway_base = None
     for candidate in [
         "/app/x402-gateway",
-        "x402-gateway"  # [INTERNAL],
-        "/srv/rmi/backend/x402-gateway",
-        "x402-gateway",  # [INTERNAL],
+        "x402-gateway",  # fallback
+        os.environ.get("RMI_X402_GATEWAY_PATH", "/app/x402-gateway"),
+        "x402-gateway",  # fallback
     ]:
         if os.path.isdir(candidate):
             gateway_base = candidate

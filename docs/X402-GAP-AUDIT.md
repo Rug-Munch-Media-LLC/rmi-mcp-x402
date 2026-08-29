@@ -9,7 +9,7 @@
 > - `docs/x402-official-spec/x402-specification-v2.md` (protocol v2)
 > - `docs/x402-official-spec/schemes__exact__scheme_exact.md`
 > - `docs/x402-official-spec/transports-v1__http.md`
-> - `/srv/work/repos/x402-py/x402/scheme.py` — canonical Python reference
+> - `<x402-py>/x402/scheme.py` — canonical Python reference
 >   (`build_payment_required`, `SUPPORTED_ASSETS`, pricing helpers)
 >
 > Line numbers for `app/domain/x402/models.py` marked **(HEAD)** refer to the
@@ -172,7 +172,7 @@ codec, RPC verification, receipts from scratch, while
 (`pip install 'x402[fastapi]'`, fail-fast).
 
 **Spec:** contract §7 — preferred fix is to vendor `x402-py` (sibling repo
-`/srv/work/repos/x402-py`) or delegate to its public API / the official SDK,
+`<x402-py>`) or delegate to its public API / the official SDK,
 closing G1–G10 at once. The models rewrite in this branch is deliberately
 SDK-shaped so the middleware can delegate without another model churn.
 
