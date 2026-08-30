@@ -217,6 +217,39 @@ external dependency**.
 
 ---
 
+## Configuration — treasury env schema
+
+Wallets resolve from the environment only — there are **no hardcoded wallet
+defaults** in source. Unset resolves to `""` and the deployment **fails
+closed**: `load_settings()` raises at boot (`app/domain/x402/config.py`,
+`REQUIRED = ("X402_WALLET",)`) and `create_app()` refuses to serve an
+unconfigured 402.
+
+| Env var | Chain | Legacy aliases (read-time, first non-empty wins) |
+| --- | --- | --- |
+| `X402_WALLET` | EVM — default payee for all `eip155:*` (Base `eip155:8453` default network) | `X402_PAY_TO`, `X402_EVM_PAY_TO`, `X402_BASE_WALLET` |
+| `X402_WALLET_SOLANA` | Solana (`solana:mainnet`, base58) | `X402_SOL_PAY_TO`, `X402_SOLANA_WALLET` |
+| `X402_WALLET_TRON` | TRON (`tron:mainnet`, `T`-prefixed base58) | `X402_TRON_PAY_TO` |
+
+Per-network EVM overrides: `X402_WALLET_BASE` / `_ETH` / `_ARBITRUM` /
+`_OPTIMISM` / `_POLYGON` (fall back to `X402_WALLET`). Canonical names win;
+old names are honored as read-time aliases only.
+
+**Operator payees (Rug Munch Media deployments)** — the same PUBLIC treasuries
+used across Pry (pryscraper) and cloud-hosting signups:
+
+- EVM: `0x1E3AC01d0fdb976179790BDD02823196A92705C9`
+- Solana: `G1uZFfsdxK2PuH2Em5LhRkEcptxHWe4vy5BZak67QyKv`
+- TRON: `TYSWXWr24QTe3c99V9dtzhe1aZTneE261p`
+
+> **Gotcha:** the EVM address above is a REAL payee and must NEVER be listed in
+> `_UNCONFIGURED_MARKERS` (`app/domain/x402/config.py`). It was historically
+> coffer's `CONFIGURED_WALLET` placeholder; treating it as a sentinel made
+> `wallet_configured()` return `False` on a correctly configured deployment and
+> refused to boot. The only sentinels are `""` and `coffer-unconfigured-wallet`.
+
+---
+
 ## 2026 spec compliance
 
 - **Protocol:** v1 **and** v2 wire formats (`PaymentRequired` / `PaymentPayload`

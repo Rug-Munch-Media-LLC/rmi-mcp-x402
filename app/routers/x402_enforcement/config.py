@@ -178,7 +178,9 @@ CHAIN_USDC = {
 }
 
 # Pay-to addresses — pulled dynamically from WalletManagerV2
-# Fallback: env vars or legacy hardcoded addresses
+# Fallback: env vars (canonical X402_WALLET / X402_WALLET_SOLANA; legacy names
+# X402_EVM_PAY_TO / X402_SOL_PAY_TO honored as read-time aliases). No hardcoded
+# wallet defaults — unset fails closed to "".
 
 
 def _get_pay_to_address(chain: str) -> str:
@@ -194,9 +196,9 @@ def _get_pay_to_address(chain: str) -> str:
         pass
     # Fallback: env vars
     if chain == "eth":
-        return os.getenv("X402_EVM_PAY_TO", "0x1E3AC01d0fdb976179790BDD02823196A92705C9")
+        return os.getenv("X402_WALLET") or os.getenv("X402_EVM_PAY_TO", "")
     if chain == "sol":
-        return os.getenv("X402_SOL_PAY_TO", "Gix4P9AmwcZRGzr2hCEME5m2QAvY86dBfm8c7e7MpFzv")
+        return os.getenv("X402_WALLET_SOLANA") or os.getenv("X402_SOL_PAY_TO", "")
     # Try to find any EVM wallet for EVM chains
     if chain in ("base", "polygon", "arbitrum", "optimism", "avalanche", "bsc", "fantom", "gnosis"):
         return _get_pay_to_address("eth")

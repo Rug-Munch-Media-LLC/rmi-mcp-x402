@@ -17,9 +17,24 @@ nano .env
 
 | Required | Example | Meaning |
 |---|---|---|
-| `X402_WALLET` | `0xAbC…` (Base) | default EVM receiving address (`eip155:8453` USDC) |
+| `X402_WALLET` | `0xAbC…` (Base) | default EVM receiving address (`eip155:8453` USDC; shared by all `eip155:*` unless `X402_WALLET_BASE`/`_ETH`/`_ARBITRUM`/`_OPTIMISM`/`_POLYGON` override) |
 | `X402_WALLET_SOLANA` | `8Z9…` (base58) | Solana USDC receiving wallet |
+| `X402_WALLET_TRON` | `T…` (base58check) | TRON TRC-20 receiving wallet |
 | `REDIS_URL` | `redis://redis:6379/0` | nonce/replay store (compose auto-sets this) |
+
+Legacy alias names are honored as read-time fallbacks (canonical wins, first
+non-empty value wins): `X402_PAY_TO` / `X402_EVM_PAY_TO` / `X402_BASE_WALLET`
+→ `X402_WALLET`; `X402_SOL_PAY_TO` / `X402_SOLANA_WALLET` →
+`X402_WALLET_SOLANA`; `X402_TRON_PAY_TO` → `X402_WALLET_TRON`. New
+deployments should set the canonical names.
+
+> **Operator note (Rug Munch Media):** the public payee treasuries are EVM
+> `0x1E3AC01d0fdb976179790BDD02823196A92705C9`, Solana
+> `G1uZFfsdxK2PuH2Em5LhRkEcptxHWe4vy5BZak67QyKv`, TRON
+> `TYSWXWr24QTe3c99V9dtzhe1aZTneE261p` (same payees as Pry and cloud-hosting
+> signups). The EVM address is a REAL payee — never list it in
+> `_UNCONFIGURED_MARKERS` (it was once coffer's `CONFIGURED_WALLET` placeholder;
+> that mistake made configured deployments refuse to boot).
 
 Everything else is optional. **Coffer fails closed**: if no wallet is set, the
 service refuses to start with a clear message — it never silently pays a

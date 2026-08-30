@@ -151,9 +151,9 @@ class MultiChainFacilitator:
     base_config = {
         "name": "RugMunch Intelligence x402 Gateway",
         "network": "BASE",
-        "wallet_address": os.environ.get(
-            "X402_BASE_WALLET", "0x1E3AC01d0fdb976179790BDD02823196A92705C9"
-        ),
+        # Canonical X402_WALLET; legacy X402_BASE_WALLET as read-time alias.
+        # No hardcoded default — unset fails closed to "".
+        "wallet_address": os.environ.get("X402_WALLET") or os.environ.get("X402_BASE_WALLET", ""),
         "token_symbol": "ETH",
         "token_decimals": 18,
         "rpc_url": "https://mainnet.base.org",
@@ -163,9 +163,10 @@ class MultiChainFacilitator:
     solana_config = {
         "name": "RugMunch Intelligence x402 Gateway",
         "network": "SOLANA",
-        "wallet_address": os.environ.get(
-            "X402_SOLANA_WALLET", "Gix4P9AmwcZRGzr2hCEME5m2QAvY86dBfm8c7e7MpFzv"
-        ),
+        # Canonical X402_WALLET_SOLANA; legacy X402_SOLANA_WALLET as alias.
+        # No hardcoded default — unset fails closed to "".
+        "wallet_address": os.environ.get("X402_WALLET_SOLANA")
+        or os.environ.get("X402_SOLANA_WALLET", ""),
         "token_symbol": "USDC",
         "token_decimals": 6,
         "rpc_url": "https://api.mainnet-beta.solana.com",
