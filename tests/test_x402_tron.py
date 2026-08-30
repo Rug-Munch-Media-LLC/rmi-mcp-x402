@@ -7,7 +7,6 @@ import respx
 from httpx import Response
 
 from app.domain.x402.tron_verifier import (
-    DEFAULT_TRON_RPC_URL,
     TRON_USDT_CONTRACT,
     verify_tron_payment,
 )
@@ -138,21 +137,20 @@ async def test_all_rpcs_down_fail_closed() -> None:
     assert out["verified"] is False
 
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_router_routes_tron_to_real_verifier() -> None:
-    """network_family tron must reach the LIVE verifier, not the scaffold."""
-    from app.domain.x402.facilitator_config import X402_NETWORK_WALLETS
+async def test_router_routes_tron_to_fail_closed_scaffold() -> None:
+    """network_family tron MUST fail closed via the scaffold — never a real
+    Trongrid claim. The scheme status is scaffolded:needs_facilitator until a
+    real TRC-20 settlement verifier is wired in and the status flips."""
     from app.domain.x402.facilitator_router import FacilitatorRouter
 
-    wallet = X402_NETWORK_WALLETS.get("tron:mainnet") or MERCHANT
-    respx.post(f"{DEFAULT_TRON_RPC_URL}/wallet/gettransactioninfobyid").mock(
-        return_value=Response(200, json=_tx_info(to=wallet if wallet.startswith("T") else MERCHANT))
-    )
     router = FacilitatorRouter(facilitators=[], self_hosted=False)
     out = await router.verify("pid", "0xtx", "tron:mainnet", "USDT", 1.0)
-    assert out.get("facilitator") == "tron-rpc"
-    assert "scaffolded" not in json_dumps(out)
+    assert out.get("verified") is False
+    assert out.get("scaffolded") is True
+    assert out.get("facilitator") is None  # NOT the live tron-rpc claim
+    assert "needs_facilitator" in out.get("reason", "")
+    assert "scaffolded" in json_dumps(out)
 
 
 def json_dumps(o: object) -> str:

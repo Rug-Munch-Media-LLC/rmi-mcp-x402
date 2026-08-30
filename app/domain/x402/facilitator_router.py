@@ -35,7 +35,6 @@ from .pricing import (
 )
 from .replay import REPLAY_HTTP_STATUS, ReplayStore
 from .self_facilitator import SelfFacilitator
-from .tron_verifier import verify_tron_payment
 
 log = logging.getLogger(__name__)
 
@@ -191,12 +190,13 @@ class FacilitatorRouter:
                 }
             return {"verified": True, "reason": "offline_mode", "settlement": None}
 
-        # TRON: verifier path exists, but the SCHEME status is
-        # scaffolded:needs_facilitator (see VERIFICATION_STATUS) — a payment is
-        # only ever claimed verified after a real on-chain TRC-20 check passes,
-        # and the health surface never reports TRON as "live".
+        # TRON: the SCHEME status is scaffolded:needs_facilitator (see
+        # VERIFICATION_STATUS) — a settlement MUST NEVER be claimed from a
+        # Trongrid receipt. Route through the fail-closed scaffold (always
+        # verified:false, scaffolded:true) so a TRON payment is never marked
+        # paid until a real TRC-20 verifier is wired in and the status flips.
         if network_family(network_id) == "tron":
-            return await self._verify_tron(payment_id, tx_hash, network_id, asset, amount_usd)
+            return self._scaffold_non_evm_verify(payment_id, tx_hash, network_id, asset, amount_usd)
 
         # Other scaffolded networks stay scaffolded — never claimed verified.
         if network_id in SCAFFOLDED_NETWORKS:
@@ -291,36 +291,6 @@ class FacilitatorRouter:
             "facilitator": "self-hosted",
             "network": network_id,
         }
-
-    async def _verify_tron(
-        self,
-        payment_id: str,
-        tx_hash: str,
-        network: str,
-        asset: str,
-        amount_usd: float,
-    ) -> dict[str, Any]:
-        """Verify a TRON TRC-20 USDT payment via the Trongrid RPC."""
-        import os
-
-        network_id = normalize_network_id(network)
-        recipient = X402_NETWORK_WALLETS.get(network_id) or X402_WALLET
-        rpc_url = os.getenv("X402_TRON_RPC", "https://api.trongrid.io")
-        fallbacks = [
-            u.strip() for u in os.getenv("X402_TRON_RPC_FALLBACKS", "").split(",") if u.strip()
-        ]
-
-        result = await verify_tron_payment(
-            tx_hash=tx_hash,
-            recipient=recipient,
-            amount_usd=amount_usd,
-            rpc_url=rpc_url,
-            fallback_rpc_urls=fallbacks,
-        )
-        result["network"] = network_id
-        result["payment_id"] = payment_id
-        result["facilitator"] = "tron-rpc"
-        return result
 
     def _scaffold_non_evm_verify(
         self,
