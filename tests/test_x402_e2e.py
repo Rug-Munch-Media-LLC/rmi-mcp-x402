@@ -251,8 +251,8 @@ async def test_health_exposes_honest_verification_status(e2e: X402E2EHarness) ->
     assert r.status_code == 200
     body = r.json()
     status = body["verification_status"]
-    # EVM/Solana are live; TRON stays scaffolded:needs_facilitator (no TRC-20
-    # settlement verifier is exposed) — scaffolded chains are never "live".
+    # EVM/Solana/TRON are live — TRON via the real TRC-20 USDT verifier
+    # ported from Pry (2026-09-01). Scaffolded chains are never "live".
     assert status.get("evm") == "live"
     assert status.get("solana") == "live"
-    assert status.get("tron") == "scaffolded:needs_facilitator"
+    assert status.get("tron") == "live"

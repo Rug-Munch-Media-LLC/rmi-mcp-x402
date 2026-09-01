@@ -112,8 +112,10 @@ class X402Settings(BaseModel):
 
     #: Path prefixes exempt from the 402 gate (payment protocol + meta routes).
     #: ``/v1/x402`` covers ``/v1/x402/{payment,verify,settle,health}``.
+    #: ``/.well-known`` frees discovery (x402 spec: discovery endpoints must
+    #: be reachable without payment — agents enumerate them before paying).
     free_paths: frozenset[str] = frozenset(
-        {"/v1/x402", "/health", "/docs", "/openapi", "/version", "/dashboard"}
+        {"/v1/x402", "/health", "/docs", "/openapi", "/version", "/dashboard", "/.well-known"}
     )
 
     @classmethod

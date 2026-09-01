@@ -273,7 +273,7 @@ def validate_client_amount(
 VERIFICATION_STATUS: dict[str, str] = {
     "evm": "live",
     "solana": "live",
-    "tron": "scaffolded:needs_facilitator",
+    "tron": "live",
 }
 
 # Chains with no real settlement-verification (structure/price/asset validated

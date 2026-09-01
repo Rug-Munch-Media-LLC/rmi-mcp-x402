@@ -139,7 +139,7 @@ async def test_health_wallet_and_readiness_agree(e2e: X402E2EHarness) -> None:
     status = r.json()["verification_status"]
     assert status["evm"] == "live"
     assert status["solana"] == "live"
-    assert status["tron"] == "scaffolded:needs_facilitator"
+    assert status["tron"] == "live"  # TRC-20 verifier ported from Pry (2026-09-01)
 
     # readiness() carries the wallet-configured signal the surface advertises.
     ready = get_facilitator_router().readiness()

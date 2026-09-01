@@ -138,19 +138,27 @@ async def test_all_rpcs_down_fail_closed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_router_routes_tron_to_fail_closed_scaffold() -> None:
-    """network_family tron MUST fail closed via the scaffold — never a real
-    Trongrid claim. The scheme status is scaffolded:needs_facilitator until a
-    real TRC-20 settlement verifier is wired in and the status flips."""
+async def test_router_routes_tron_to_real_verifier() -> None:
+    """network_family tron routes to the REAL TRC-20 verifier (ported from
+    Pry, 2026-09-01). A bogus tx hash fails closed with verified=False —
+    but via the on-chain verifier (facilitator=tron-grid), NOT the old
+    always-false scaffold."""
     from app.domain.x402.facilitator_router import FacilitatorRouter
 
     router = FacilitatorRouter(facilitators=[], self_hosted=False)
-    out = await router.verify("pid", "0xtx", "tron:mainnet", "USDT", 1.0)
-    assert out.get("verified") is False
-    assert out.get("scaffolded") is True
-    assert out.get("facilitator") is None  # NOT the live tron-rpc claim
-    assert "needs_facilitator" in out.get("reason", "")
-    assert "scaffolded" in json_dumps(out)
+    from app.domain.x402 import external_verify
+
+    wallets_backup = dict(external_verify.X402_NETWORK_WALLETS)
+    external_verify.X402_NETWORK_WALLETS["tron:mainnet"] = "TXYZsyYJjTJeYVw3YUBsfoG7Y9QaP1qMab"
+    try:
+        out = await router.verify("pid", "0xtx", "tron:mainnet", "USDT", 1.0)
+    finally:
+        external_verify.X402_NETWORK_WALLETS.clear()
+        external_verify.X402_NETWORK_WALLETS.update(wallets_backup)
+    assert out.get("verified") is False  # bogus tx hash never verifies
+    assert out.get("scaffolded") is not True  # no longer the scaffold
+    assert out.get("facilitator") == "tron-grid"
+    assert "no_trc20_transfer_found" in out.get("reason", "")
 
 
 def json_dumps(o: object) -> str:

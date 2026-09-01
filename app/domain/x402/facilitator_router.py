@@ -190,13 +190,12 @@ class FacilitatorRouter:
                 }
             return {"verified": True, "reason": "offline_mode", "settlement": None}
 
-        # TRON: the SCHEME status is scaffolded:needs_facilitator (see
-        # VERIFICATION_STATUS) — a settlement MUST NEVER be claimed from a
-        # Trongrid receipt. Route through the fail-closed scaffold (always
-        # verified:false, scaffolded:true) so a TRON payment is never marked
-        # paid until a real TRC-20 verifier is wired in and the status flips.
+        # TRON: real TRC-20 USDT verifier wired (ported from the Pry
+        # production verifier, 2026-09-01). Settlements are verified on-chain
+        # via Trongrid gettransactioninfobyid — fail-closed on non-USDT
+        # contracts, wrong recipient, or underpayment.
         if network_family(network_id) == "tron":
-            return self._scaffold_non_evm_verify(payment_id, tx_hash, network_id, asset, amount_usd)
+            return await verify_external(self, payment_id, tx_hash, network_id, asset, amount_usd)
 
         # Other scaffolded networks stay scaffolded — never claimed verified.
         if network_id in SCAFFOLDED_NETWORKS:

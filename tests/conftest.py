@@ -54,6 +54,30 @@ def _strip_app_shadows() -> None:
                 pass
 
 
+# ── Test wallet configuration (MUST precede facilitator_config import) ──────
+# The facilitator reads receiving wallets from env at import time. Without
+# these, every chain advertises "no receiving wallet" and 30+ matrix tests
+# fail — while the DEPLOYED coffer (env in compose) works fine. Test wallets
+# are throwaway addresses; they only need to be well-formed.
+_TEST_WALLET_EVM = "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18"
+_TEST_WALLET_SOL = "G1uZFfsdxK2PuH2Em5LhRkEcptxHWe4vy5BZak67QyKv"
+_TEST_WALLET_TRON = "TXYZsyYJjTJeYVw3YUBsfoG7Y9QaP1qMab"
+for _k, _v in {
+    "X402_WALLET": _TEST_WALLET_EVM,
+    "X402_WALLET_BASE": _TEST_WALLET_EVM,
+    "X402_WALLET_ETH": _TEST_WALLET_EVM,
+    "X402_WALLET_ARBITRUM": _TEST_WALLET_EVM,
+    "X402_WALLET_OPTIMISM": _TEST_WALLET_EVM,
+    "X402_WALLET_POLYGON": _TEST_WALLET_EVM,
+    "X402_WALLET_BASE_SEPOLIA": _TEST_WALLET_EVM,
+    "X402_WALLET_ETH_SEPOLIA": _TEST_WALLET_EVM,
+    "X402_WALLET_SOLANA": _TEST_WALLET_SOL,
+    "X402_WALLET_TRON": _TEST_WALLET_TRON,
+}.items():
+    os.environ.setdefault(_k, _v)
+
+_strip_app_shadows()
+
 _strip_app_shadows()
 for _p in (_VENDOR, _REPO_ROOT):
     if _p not in sys.path:
