@@ -6,9 +6,7 @@ import json
 import logging
 import time
 
-from app.core.redis import get_redis
-
-from app.routers.x402_enforcement.config import CHAIN_USDC, EVM_PAY_TO
+from app.routers.x402_enforcement.config import CHAIN_USDC, EVM_PAY_TO, get_redis
 from app.routers.x402_enforcement.pricing import TOOL_PRICES, _ensure_tool_prices
 
 logger = logging.getLogger("x402_enforcement_v2")

@@ -7,8 +7,6 @@ import logging
 import os
 import time
 
-from app.core.redis import get_redis
-from app.routers.protection import get_client_id
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
@@ -22,6 +20,8 @@ from app.routers.x402_enforcement.config import (
     _discovery_cache,
     _discovery_cache_time,
     _ensure_pay_addresses,
+    get_client_id,
+    get_redis,
 )
 from app.routers.x402_enforcement.pricing import TOOL_PRICES
 
@@ -182,7 +182,6 @@ def _build_discovery_response():
     }
 
 
-
 def _resolve_pay_to(method: str) -> str:
     _ensure_pay_addresses()
     if method == "payai":
@@ -196,14 +195,12 @@ def _resolve_pay_to(method: str) -> str:
     return EVM_PAY_TO or ""  # type: ignore[return-value]
 
 
-
 def _resolve_asset(cfg: dict) -> str:
     asset = cfg.get("usdc", "")
     if not asset and "tokens" in cfg:
         first = next(iter(cfg["tokens"].values()), "")
         return first if first != "native" else "BTC"
     return asset
-
 
 
 def _build_extra(cfg: dict, tool_id: str, chain_key: str, pay_to: str, method: str) -> dict:
@@ -235,7 +232,6 @@ def _build_extra(cfg: dict, tool_id: str, chain_key: str, pay_to: str, method: s
 
 
 @discovery_router.get("/.well-known/x402")
-
 async def x402_discovery():
     """x402 discovery endpoint — lists all tools, chains, payment requirements, and trial info.
     Response is cached for DISCOVERY_CACHE_TTL seconds to avoid rebuilding 7-chain requirements per request.
@@ -253,7 +249,6 @@ async def x402_discovery():
 
 # ── Trial Status Endpoint ──
 @discovery_router.get("/api/v1/x402/trial-status")
-
 async def get_trial_status(request: Request):
     """Check remaining free trials for the current client"""
     client_id = get_client_id(request)
@@ -284,7 +279,6 @@ async def get_trial_status(request: Request):
 
 # ── Revenue Read Endpoint ──
 @discovery_router.get("/api/v1/x402/revenue")
-
 async def get_revenue():
     """Read cumulative x402 revenue stats from Redis counters.
     _ensure_pay_addresses()
@@ -358,7 +352,6 @@ async def get_revenue():
 
 
 @discovery_router.get("/api/v1/x402/analytics/pricing-suggestions")
-
 async def get_pricing_suggestions():
     """Auto-pricing suggestions based on conversion rates and usage data.
 
@@ -451,7 +444,6 @@ async def get_pricing_suggestions():
 
 # ── Refund Request Endpoint ──
 @router.post("/refund")
-
 async def request_refund(request: Request):
     """Request a refund for a paid tool that returned no data.
 
@@ -603,5 +595,3 @@ async def request_refund(request: Request):
             content={"error": f"Refund request failed: {str(e)[:100]}"},
             headers=SECURITY_HEADERS,
         )
-
-

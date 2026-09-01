@@ -68,9 +68,12 @@ def is_free_path(path: str, free_paths: set[str]) -> bool:
     """Prefix match: ``/v1/health`` also frees ``/v1/health/details``.
 
     Empty prefixes are rejected (they would match everything and disable
-    the payment gate entirely).
+    the payment gate entirely). The root path ``/`` is exact-match only —
+    as a prefix it would match every path and disable the gate.
     """
-    return any(prefix and path.startswith(prefix) for prefix in free_paths)
+    if path == "/":
+        return "/" in free_paths
+    return any(prefix and prefix != "/" and path.startswith(prefix) for prefix in free_paths)
 
 
 class X402Middleware:

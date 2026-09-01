@@ -115,7 +115,7 @@ class X402Settings(BaseModel):
     #: ``/.well-known`` frees discovery (x402 spec: discovery endpoints must
     #: be reachable without payment — agents enumerate them before paying).
     free_paths: frozenset[str] = frozenset(
-        {"/v1/x402", "/health", "/docs", "/openapi", "/version", "/dashboard", "/.well-known"}
+        {"/", "/v1/x402", "/health", "/docs", "/openapi", "/version", "/dashboard", "/.well-known"}
     )
 
     @classmethod
@@ -296,6 +296,12 @@ def create_app(*args: Any, **kwargs: Any) -> Any:
     from app.domain.x402.extensions.agent_identity import register_agents_router
 
     app.include_router(register_agents_router())
+
+    # x402 discovery manifest (spec: /.well-known/x402 must be reachable
+    # without payment — agents enumerate chains/assets before paying).
+    from app.routers.x402_enforcement.endpoints import discovery_router
+
+    app.include_router(discovery_router)
 
     app.add_middleware(
         X402Middleware,

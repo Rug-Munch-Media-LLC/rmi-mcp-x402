@@ -18,6 +18,7 @@ from app.routers.x402_enforcement.config import (
     TRIAL_WINDOW_SECONDS,
     VERIFIER,
     get_client_id,  # noqa: F401
+    get_redis,  # noqa: F401
 )
 
 # Routers
@@ -53,10 +54,23 @@ from app.routers.x402_enforcement.verification import (
 )
 
 __all__ = [
-    "CHAIN_NAMES", "CHAIN_USDC", "DISCOVERY_CACHE_TTL", "EVM_PAY_TO",
-    "SECURITY_HEADERS", "SOL_PAY_TO", "TOOL_PRICES", "TRIAL_REDIS_PREFIX",
-    "TRIAL_WINDOW_SECONDS", "VERIFIER", "build_402_response", "check_trial",
-    "discovery_router", "get_client_id", "parse_x_pay_header", "router",
-    "verify_payment", "verify_payment_via_router", "x402_enforcement_middleware",
+    "CHAIN_NAMES",
+    "CHAIN_USDC",
+    "DISCOVERY_CACHE_TTL",
+    "EVM_PAY_TO",
+    "SECURITY_HEADERS",
+    "SOL_PAY_TO",
+    "TOOL_PRICES",
+    "TRIAL_REDIS_PREFIX",
+    "TRIAL_WINDOW_SECONDS",
+    "VERIFIER",
+    "build_402_response",
+    "check_trial",
+    "discovery_router",
+    "get_client_id",
+    "parse_x_pay_header",
+    "router",
+    "verify_payment",
+    "verify_payment_via_router",
+    "x402_enforcement_middleware",
 ]
-

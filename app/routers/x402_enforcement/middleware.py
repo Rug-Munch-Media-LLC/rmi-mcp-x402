@@ -8,12 +8,15 @@ import logging
 import os
 import re
 
-from app.core.redis import get_redis
-from app.routers.protection import get_client_id
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
-from app.routers.x402_enforcement.config import CHAIN_USDC, SECURITY_HEADERS
+from app.routers.x402_enforcement.config import (
+    CHAIN_USDC,
+    SECURITY_HEADERS,
+    get_client_id,
+    get_redis,
+)
 from app.routers.x402_enforcement.policy import _record_refundable_payment, check_trial
 from app.routers.x402_enforcement.spec import build_402_response, parse_x_pay_header
 from app.routers.x402_enforcement.verification import verify_payment_via_router

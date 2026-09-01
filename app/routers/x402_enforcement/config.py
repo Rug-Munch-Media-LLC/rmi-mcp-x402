@@ -241,3 +241,55 @@ CHAIN_NAMES = {
 }
 
 # ── x402 v2 spec helpers ──
+
+
+def get_client_id(request) -> str:
+    """Derive a stable client identity for burst limiting + trial tracking.
+
+    Trusted-proxy aware: honors X-Forwarded-For's leftmost entry (the
+    original client per proxy-chaining semantics) — behind nginx/cloudflared
+    the socket peer is the local proxy, which would collapse every internet
+    caller into one burst bucket. Falls back to the socket peer, then
+    "unknown" (shared bucket, still rate-limited).
+    """
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    client = getattr(request, "client", None)
+    if client and getattr(client, "host", None):
+        return str(client.host)
+    return "unknown"
+
+
+_REDIS_CLIENT = None
+
+
+def get_redis():
+    """Lazy shared redis client (legacy enforcement helpers).
+
+    The old ``app.core.redis`` module was deleted in the dead-router
+    cleanup; the trial/burst helpers here still need a connection. Returns
+    None when REDIS_URL is unset or redis is unreachable — callers already
+    degrade gracefully (trials fall back to per-process state, burst
+    limiting skips).
+    """
+    import os
+
+    global _redis_client  # noqa: PLW0603
+    try:
+        return _redis_client
+    except NameError:
+        pass
+    url = os.getenv("REDIS_URL", "")
+    if not url:
+        return None
+    try:
+        import redis
+
+        _redis_client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=2)
+        _redis_client.ping()
+        return _redis_client
+    except Exception:  # noqa: BLE001 — redis down must never break the gate
+        return None

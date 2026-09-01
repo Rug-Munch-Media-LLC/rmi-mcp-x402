@@ -22,9 +22,17 @@ def _load_tool_prices():
     import re
 
     # ─── 1. Load canonical base (ALWAYS works, no circular dependency) ────
-    from app.canonical_tools import CANONICAL_TOOL_PRICES
+    # NOTE: app/canonical_tools.py never existed in this repo (dead import
+    # from a copy-pasted structure — caught 2026-09-01 when the discovery
+    # router mount triggered it). The gateway-config enrichment below is the
+    # real loader; the domain pricing (app/domain/x402/pricing.py) is the
+    # source of truth for the coffer's own operations.
+    try:
+        from app.canonical_tools import CANONICAL_TOOL_PRICES
 
-    TOOL_PRICES.update(CANONICAL_TOOL_PRICES)
+        TOOL_PRICES.update(CANONICAL_TOOL_PRICES)
+    except ImportError:
+        logger.info("canonical_tools catalog not present — using gateway configs + domain pricing")
 
     # ─── 2. Enrich from gateway configs (adds chain-specific variants) ────────
     # Try multiple paths: Docker mount, host path, OpenClaw backup
