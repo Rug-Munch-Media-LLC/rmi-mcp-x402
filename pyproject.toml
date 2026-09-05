@@ -80,6 +80,7 @@ ignore = ["E501"]
 "app/core/duckdb_analytics.py" = ["I001"]
 "app/domain/verified/enrichment.py" = ["F401", "I001"]
 "app/domain/verified/service.py" = ["F401", "I001"]
+"data_mcp*.py" = ["N802", "N803"]  # MCP tool names are API surface (camelCase RPC names)
 
 # --- mypy -----------------------------------------------------------------
 [tool.mypy]
