@@ -299,7 +299,7 @@ def create_app(*args: Any, **kwargs: Any) -> Any:
 
     # x402 discovery manifest (spec: /.well-known/x402 must be reachable
     # without payment — agents enumerate chains/assets before paying).
-    from app.routers.x402_enforcement.endpoints import discovery_router
+    from app.domain.x402.discovery import router as discovery_router
 
     app.include_router(discovery_router)
 
