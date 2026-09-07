@@ -27,4 +27,11 @@ router.include_router(_domain_router)
 # Paid MCP tool catalog (mirrors /api/v1/x402/catalog but requires payment)
 router.include_router(_tools_router)
 
+# The three sellable paid offerings (Rug Verdict / Deployer Dossier /
+# Cluster Attribution), each fail-closed x402-gated via the coffer
+# facilitator client.
+from app.domain.x402.offerings_router import router as _offerings_router  # noqa: E402
+
+router.include_router(_offerings_router)
+
 __all__ = ["router"]
