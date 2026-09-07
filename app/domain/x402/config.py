@@ -88,7 +88,12 @@ class X402Settings(BaseModel):
     cf_verify: str = ""
     cf_settle: str = ""
     cf_priority: int = 3
-    facilitator_url: str = "https://facilitator.payai.network"
+    #: Canonical facilitator the x402 MCP gateway delegates payment
+    #: verification/settlement to: x402-coffer (self-hosted), default local
+    #: ``http://localhost:8670``. The gateway treats this facilitator as the
+    #: source of truth and FAILS CLOSED (402) when it is unreachable — it never
+    #: falls back to allowing a payment through unverified.
+    facilitator_url: str = "http://localhost:8670"
     default_network: str = "eip155:8453"
 
     # ── Protocol / expiry / validation tuning ─────────────────────────────
@@ -174,7 +179,7 @@ class X402Settings(BaseModel):
             cf_verify=g("X402_CF_VERIFY", ""),
             cf_settle=g("X402_CF_SETTLE", ""),
             cf_priority=int(g("X402_CF_PRIORITY", "3")),
-            facilitator_url=g("X402_FACILITATOR_URL", "https://facilitator.payai.network"),
+            facilitator_url=g("X402_FACILITATOR_URL", "http://localhost:8670"),
             default_network=g("X402_DEFAULT_NETWORK", "eip155:8453"),
             timeout_seconds=float(g("X402_TIMEOUT_SECONDS", "15")),
             payment_ttl=int(g("X402_PAYMENT_TTL", "3600")),

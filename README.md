@@ -217,6 +217,34 @@ external dependency**.
 
 ---
 
+## x402-coffer — external facilitator for the MCP gateway
+
+The **x402 MCP gateway** (premium/tool endpoints) delegates payment
+verification and settlement to a self-hosted **x402-coffer** facilitator over
+HTTP instead of verifying on-chain in-house. Coffer is the *source of truth*
+for whether a payment is real; the gateway's `X-Payment-ID` gate fails closed
+when coffer cannot be reached.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `X402_FACILITATOR_URL` | `http://localhost:8670` | Base URL of the x402-coffer deployment |
+
+Endpoints the gateway calls on coffer:
+
+| Gateway call | Coffer endpoint | Purpose |
+| --- | --- | --- |
+| payment-gate re-check | `POST {X402_FACILITATOR_URL}/v1/x402/verify` | Confirm an `X-Payment-ID` is verified (caller-bound, TTL'd) |
+| settlement | `POST {X402_FACILITATOR_URL}/v1/x402/settle` | Settle a verified payment |
+
+**Fail-closed contract:** a payment-gated call is allowed through only when
+coffer itself answers `verified: true`. If coffer is unreachable, times out or
+returns 5xx (after bounded retries), the gateway answers **402 Payment
+Required** — it never falls back to allowing the call through unverified. The
+gateway's local payment store is demoted to caller/tx *memory*; it can no
+longer self-verify a payment.
+
+---
+
 ## Configuration — treasury env schema
 
 Wallets resolve from the environment only — there are **no hardcoded wallet

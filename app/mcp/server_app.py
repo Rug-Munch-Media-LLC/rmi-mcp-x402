@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app.domain.x402.facilitator_client import get_facilitator_client
 from app.domain.x402.middleware import (
     HEADER_X_PAYMENT_ID,
     caller_key_from_request,
@@ -239,49 +240,74 @@ class X402MCPServer:
                 if bundle_id:
                     bundle = self._tool_manager.get_bundle(bundle_id)
                     if bundle and bundle.requires_payment and bundle.price_usd > 0:
-                        # Security hardening (2026-09-06 cross-cutting-security
-                        # audit): the presence-only X-Payment / X-Solana-Payment
-                        # header gates were REMOVED — any string unlocked a paid
-                        # endpoint. Access now requires a payment id VERIFIED by
-                        # the facilitator/coffer (POST /v1/x402/verify records it
-                        # caller-bound + TTL'd after on-chain confirmation); the
-                        # caller replays it on the canonical X-Payment-ID header.
+                        # Coffer-facilitated gate (2026-09-07): x402-coffer is the
+                        # source of truth for payment verification. The local
+                        # PaymentStore is demoted to caller/tx MEMORY — it can no
+                        # longer self-verify a payment. A paid call only passes
+                        # when coffer itself answers verified:true; an
+                        # unreachable facilitator FAILS CLOSED to 402 and never
+                        # allows a payment through unverified.
                         payment_id = request.headers.get(HEADER_X_PAYMENT_ID, "")
-                        store = get_default_store()
                         caller_key = caller_key_from_request(request)
-                        if not store.is_paid(payment_id, caller_key=caller_key):
-                            return JSONResponse(
-                                content={
-                                    "error": "Payment required",
-                                    "code": "PAYMENT_REQUIRED",
-                                    "bundle": bundle_id,
-                                    "bundle_name": bundle.name,
-                                    "price_usd": bundle.price_usd,
-                                    "payment_options": {
-                                        "base": self._get_payment_req(bundle, "base"),
-                                        "solana": self._get_payment_req(bundle, "solana"),
-                                    },
-                                    "instructions": (
-                                        "Verify your payment via POST /v1/x402/verify, then "
-                                        "replay with the X-Payment-ID header set to the "
-                                        "returned verified payment_id"
-                                    ),
-                                },
-                                status_code=402,
-                                headers={
-                                    "X-Payment-Required": "true",
-                                    "X-Payment-Address-Base": self._facilitator.base_config[
-                                        "wallet_address"
-                                    ],
-                                    "X-Payment-Address-Solana": self._facilitator.solana_config[
-                                        "wallet_address"
-                                    ],
-                                    "X-Bundle-Name": bundle.name,
-                                    "X-Price-USD": str(bundle.price_usd),
-                                },
+                        record = get_default_store().get(payment_id) if payment_id else None
+                        if record is None or (
+                            record.get("caller_key") and record.get("caller_key") != caller_key
+                        ):
+                            return self._payment_required_response(
+                                bundle,
+                                "Verified X-Payment-ID required — verify via "
+                                "POST /v1/x402/verify, then replay with the "
+                                "X-Payment-ID header set to the returned payment_id.",
+                            )
+                        verdict = await get_facilitator_client().verify(
+                            payment_id=payment_id,
+                            tx_hash=str(record.get("tx_hash") or ""),
+                            network=str(record.get("network") or ""),
+                            asset=str(record.get("asset") or ""),
+                            amount_usd=float(record.get("amount_usd") or 0.0),
+                        )
+                        if not verdict.get("verified"):
+                            # Fail closed: coffer down, erroring, or refusing the
+                            # payment -> 402. Never allow-through on facilitator
+                            # failure.
+                            return self._payment_required_response(
+                                bundle,
+                                str(verdict.get("reason") or "payment not verified by facilitator"),
                             )
 
             return await call_next(request)
+
+    def _payment_required_response(
+        self, bundle: X402Bundle, message: str = "Payment required"
+    ) -> JSONResponse:
+        """Spec-compliant 402 for the coffer-facilitated gate."""
+        return JSONResponse(
+            content={
+                "error": "Payment required",
+                "code": "PAYMENT_REQUIRED",
+                "reason": message,
+                "bundle": bundle.bundle_id,
+                "bundle_name": bundle.name,
+                "price_usd": bundle.price_usd,
+                "payment_options": {
+                    "base": self._get_payment_req(bundle, "base"),
+                    "solana": self._get_payment_req(bundle, "solana"),
+                },
+                "instructions": (
+                    "Verify your payment via POST /v1/x402/verify, then "
+                    "replay with the X-Payment-ID header set to the "
+                    "returned verified payment_id"
+                ),
+            },
+            status_code=402,
+            headers={
+                "X-Payment-Required": "true",
+                "X-Payment-Address-Base": self._facilitator.base_config["wallet_address"],
+                "X-Payment-Address-Solana": self._facilitator.solana_config["wallet_address"],
+                "X-Bundle-Name": bundle.name,
+                "X-Price-USD": str(bundle.price_usd),
+            },
+        )
 
     def _get_payment_req(self, bundle: X402Bundle, chain: str) -> dict[str, Any]:
         facilitator = (
