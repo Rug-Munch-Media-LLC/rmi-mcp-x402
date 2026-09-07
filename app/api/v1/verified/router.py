@@ -2,15 +2,17 @@
 
 Public + private endpoints for the verification program.
 """
+
 from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.api.v1.verified.security import require_signed_admin
 from app.core.logging import get_logger
 from app.domain.verified.models import (
     TokenApplication,
@@ -26,6 +28,7 @@ router = APIRouter(prefix="/api/v1/verified", tags=["verified-badge"])
 
 
 # ── Response Models ────────────────────────────────────────
+
 
 class SubmitApplicationResponse(BaseModel):
     """Response after submitting an application."""
@@ -65,6 +68,7 @@ class VerifiedTokenList(BaseModel):
 
 
 # ── Application Endpoints ─────────────────────────────────
+
 
 @router.post("/apply", response_model=SubmitApplicationResponse)
 async def submit_application(
@@ -122,9 +126,7 @@ async def submit_application(
 
 
 @router.get("/status/{chain}/{address}")
-async def get_verification_status(
-    chain: str, address: str
-) -> dict[str, Any]:
+async def get_verification_status(chain: str, address: str) -> dict[str, Any]:
     """Check the verification status of a token.
 
     Public endpoint. Anyone can check if a token is verified and see
@@ -141,9 +143,7 @@ async def get_verification_status(
 
 
 @router.get("/check/{chain}/{address}")
-async def check_token_verified(
-    chain: str, address: str
-) -> dict[str, Any]:
+async def check_token_verified(chain: str, address: str) -> dict[str, Any]:
     """Quick check if a token is currently verified.
 
     Returns:
@@ -161,6 +161,7 @@ async def check_token_verified(
 
 
 # ── Public Registry ───────────────────────────────────────
+
 
 @router.get("/registry", response_model=VerifiedTokenList)
 async def get_verified_registry(
@@ -186,9 +187,7 @@ async def get_verified_registry(
 
 
 @router.get("/registry/{slug}", response_model=VerifiedTokenPublic)
-async def get_verified_token_by_slug(
-    slug: str
-) -> VerifiedTokenPublic:
+async def get_verified_token_by_slug(slug: str) -> VerifiedTokenPublic:
     """Get a specific verified token by its public slug.
 
     Public endpoint. Shows the full verification report for a token.
@@ -201,10 +200,9 @@ async def get_verified_token_by_slug(
 
 # ── MCP Integration ───────────────────────────────────────
 
+
 @router.get("/mcp/check/{chain}/{address}")
-async def mcp_check_verified(
-    chain: str, address: str
-) -> dict[str, Any]:
+async def mcp_check_verified(chain: str, address: str) -> dict[str, Any]:
     """MCP endpoint: Check if a token is verified.
 
     Returns the is_verified field that MCP tools include in their responses.
@@ -231,13 +229,20 @@ async def mcp_check_verified(
 
 # ── Internal Admin ────────────────────────────────────────
 
+
 @router.post("/admin/revoke/{chain}/{address}")
 async def admin_revoke_token(
-    chain: str, address: str, reason: str, evidence: str
+    chain: str,
+    address: str,
+    reason: str,
+    evidence: str,
+    _admin: None = Depends(require_signed_admin),
 ) -> dict[str, Any]:
     """Admin endpoint: Revoke a verified token's badge.
 
-    Requires admin auth. Used when:
+    Requires a signed admin token (HMAC-SHA256 over the request path +
+    timestamp, shared ``VERIFIED_ADMIN_SECRET``) — anonymous requests are
+    rejected with 401 (2026-09-06 service-health audit). Used when:
     - New information emerges contradicting original assessment
     - Team withheld material information
     - Contract is upgraded with suspicious functionality
@@ -248,7 +253,9 @@ async def admin_revoke_token(
     """
     log.warning(
         "verified_badge_admin_revoke chain=%s address=%s reason=%s",
-        chain, address, reason,
+        chain,
+        address,
+        reason,
     )
     return {
         "chain": chain,
@@ -263,9 +270,15 @@ async def admin_revoke_token(
 
 @router.post("/admin/renew/{chain}/{address}")
 async def admin_renew_token(
-    chain: str, address: str
+    chain: str,
+    address: str,
+    _admin: None = Depends(require_signed_admin),
 ) -> dict[str, Any]:
-    """Admin endpoint: Renew a verified token's annual badge."""
+    """Admin endpoint: Renew a verified token's annual badge.
+
+    Requires a signed admin token — anonymous requests are rejected with 401
+    (2026-09-06 service-health audit).
+    """
     return {
         "chain": chain,
         "address": address,

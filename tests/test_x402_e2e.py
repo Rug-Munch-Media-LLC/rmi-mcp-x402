@@ -205,12 +205,58 @@ async def test_nonce_reuse_same_tx_hash_returns_410(e2e: X402E2EHarness) -> None
 async def test_underpayment_rejected(e2e: X402E2EHarness) -> None:
     tx = "0xtx_under"
     async with e2e.caller(SENDER_IP) as client:
-        # Paid 1 atomic less than the server-required 1000 -> rejected.
+        # Paid 1 atomic less than the server-required amount -> rejected.
         r = await _pay(
             e2e, client, tx_hash=tx, payment_id=_pid("under"), paid_atomic=REQUIRED_ATOMIC - 1
         )
     assert r.status_code == 402
     assert "underpayment" in r.json().get("error", "").lower()
+
+
+async def test_verify_cannot_be_cheapened_by_client_declared_amount(e2e: X402E2EHarness) -> None:
+    """Client-supplied amount_usd is IGNORED on /verify (server-authoritative).
+
+    A payer short-pays on-chain (REQUIRED_ATOMIC - 1000) but DECLARES an
+    amount_usd that would make that short payment look sufficient. The server
+    must reject: it verifies against resolve_price_usd, never the client's
+    claim (2026-09-06 audit).
+    """
+    tx = "0xtx_cheapen"
+    short_atomic = REQUIRED_ATOMIC - 1000
+    declared_usd = float(short_atomic) / 10**6  # exactly what the short payment "should" cover
+    assert declared_usd < SERVICE_PRICE_USD  # sanity: the claim undercuts the server price
+    async with e2e.caller(SENDER_IP) as client:
+        r = await _pay(
+            e2e,
+            client,
+            tx_hash=tx,
+            payment_id=_pid("cheapen"),
+            paid_atomic=short_atomic,
+            amount_usd=declared_usd,
+        )
+    assert r.status_code == 402
+    assert "underpayment" in r.json().get("error", "").lower()
+
+
+async def test_verify_ignores_client_underdeclared_amount_when_paid_in_full(
+    e2e: X402E2EHarness,
+) -> None:
+    """Over-paying the server price still verifies even if the client claims a
+    tiny amount_usd — the declaration is ignored, never honoured downward."""
+    tx = "0xtx_underdeclare"
+    async with e2e.caller(SENDER_IP) as client:
+        r = await _pay(
+            e2e,
+            client,
+            tx_hash=tx,
+            payment_id=_pid("underdeclare"),
+            paid_atomic=REQUIRED_ATOMIC,
+            amount_usd=0.000_001,
+        )
+        assert r.status_code == 200, r.json()
+        assert r.json()["verified"] is True
+        replay = await client.get("/v1/protected", headers={"X-Payment-ID": _pid("underdeclare")})
+    assert replay.status_code == 200
 
 
 async def test_overpayment_accepted(e2e: X402E2EHarness) -> None:

@@ -96,15 +96,20 @@ from app.domain.x402.router import router as x402_router  # noqa: E402
 from app.domain.x402.service import (  # noqa: E402
     FacilitatorRouter,
     asset_to_atomic,
+    resolve_price_usd,
     set_facilitator_router,
 )
 
-# Server-authoritative price for the gated operation (atomic quoted off this).
-SERVICE_OPERATION = "api_access"
-SERVICE_PRICE_USD = 0.001  # -> 1000 atomic USDC on eip155:8453 (6 decimals)
-
 CAIP2_BASE = "eip155:8453"
 ASSET = "USDC"
+
+# Server-authoritative price for the gated operation. Derived from
+# resolve_price_usd (NOT a hardcoded client-facing number) so the tests pay
+# exactly what the server quotes — and verify rejects any client-declared
+# underpayment relative to this real server price (2026-09-06 audit: the
+# router now ignores client-supplied amount_usd on /verify).
+SERVICE_OPERATION = "api_access"
+SERVICE_PRICE_USD = resolve_price_usd(SERVICE_OPERATION, CAIP2_BASE, ASSET)
 
 # Networks with a live on-chain verifier are exercised via the stub facilitator;
 # TRON has no verifier wired and stays scaffolded (never verified:true).

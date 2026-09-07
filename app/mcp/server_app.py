@@ -14,6 +14,11 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app.domain.x402.middleware import (
+    HEADER_X_PAYMENT_ID,
+    caller_key_from_request,
+    get_default_store,
+)
 from app.mcp.ai_guard import AIGuardWrapper
 from app.mcp.facilitator import MultiChainFacilitator
 from app.mcp.models import X402Bundle
@@ -234,10 +239,17 @@ class X402MCPServer:
                 if bundle_id:
                     bundle = self._tool_manager.get_bundle(bundle_id)
                     if bundle and bundle.requires_payment and bundle.price_usd > 0:
-                        x402_header = request.headers.get("X-Payment")
-                        solana_payment = request.headers.get("X-Solana-Payment")
-
-                        if not x402_header and not solana_payment:
+                        # Security hardening (2026-09-06 cross-cutting-security
+                        # audit): the presence-only X-Payment / X-Solana-Payment
+                        # header gates were REMOVED — any string unlocked a paid
+                        # endpoint. Access now requires a payment id VERIFIED by
+                        # the facilitator/coffer (POST /v1/x402/verify records it
+                        # caller-bound + TTL'd after on-chain confirmation); the
+                        # caller replays it on the canonical X-Payment-ID header.
+                        payment_id = request.headers.get(HEADER_X_PAYMENT_ID, "")
+                        store = get_default_store()
+                        caller_key = caller_key_from_request(request)
+                        if not store.is_paid(payment_id, caller_key=caller_key):
                             return JSONResponse(
                                 content={
                                     "error": "Payment required",
@@ -249,7 +261,11 @@ class X402MCPServer:
                                         "base": self._get_payment_req(bundle, "base"),
                                         "solana": self._get_payment_req(bundle, "solana"),
                                     },
-                                    "instructions": "Include X-Payment (Base) or X-Solana-Payment (Solana) header with transaction proof",
+                                    "instructions": (
+                                        "Verify your payment via POST /v1/x402/verify, then "
+                                        "replay with the X-Payment-ID header set to the "
+                                        "returned verified payment_id"
+                                    ),
                                 },
                                 status_code=402,
                                 headers={

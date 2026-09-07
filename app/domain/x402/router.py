@@ -38,12 +38,18 @@ from .middleware import (
     get_default_store,
     payment_required_body,
     payment_required_headers,
+    resolve_price_usd,
 )
 from .service import REPLAY_HTTP_STATUS, VERIFICATION_STATUS, get_facilitator_router
 
 router = APIRouter(prefix="/v1/x402", tags=["x402"])
 
 __all__ = ["health", "payment_challenge", "router", "settle", "verify"]
+
+#: Operation every bare ``/verify`` proof is priced against. The 402 offer
+#: surface quotes this same operation, so the amount a payer is checked
+#: against on verify is the SAME server-side price they were offered.
+VERIFY_OPERATION = "api_access"
 
 
 def _get_store() -> PaymentStore:
@@ -71,6 +77,12 @@ async def _read_json(request: Request) -> dict[str, Any]:
 
 
 def _amount(payload: dict[str, Any]) -> float:
+    """Client-declared USD amount — used ONLY on ``/settle`` forwarding.
+
+    ``/verify`` deliberately ignores this value: the required amount there is
+    resolved SERVER-side via :func:`resolve_price_usd` so a payer cannot shrink
+    the threshold by under-declaring what they paid (2026-09-06 audit).
+    """
     try:
         return float(payload.get("amount_usd", payload.get("amountUsd", 0.0)) or 0.0)
     except (TypeError, ValueError):
@@ -91,7 +103,11 @@ async def verify(request: Request) -> JSONResponse:
     tx_hash = str(payload.get("tx_hash") or payload.get("transactionHash") or "")
     network = str(payload.get("network") or "")
     asset = str(payload.get("asset") or "")
-    amount_usd = _amount(payload)
+    # Server-authoritative pricing: NEVER trust the client-supplied amount_usd.
+    # The facilitator checks the real on-chain transfer against THIS price
+    # (resolve_price_usd over the same op the 402 offer quotes), so a payer
+    # cannot cheapen a verification by declaring a smaller amount.
+    amount_usd = resolve_price_usd(VERIFY_OPERATION, network, asset)
 
     if not payment_id or not tx_hash:
         return JSONResponse(
