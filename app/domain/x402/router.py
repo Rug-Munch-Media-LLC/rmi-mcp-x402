@@ -5,8 +5,8 @@ Exposes the official x402 HTTP transport surface:
 - ``GET  /v1/x402/payment``  — 402 challenge: the spec header set
   (``PAYMENT-REQUIRED`` base64 + ``X-Payment-Required`` + ``X-Payment-Options``)
   and the ``{x402Version:1, accepts:[...]}`` body for a not-yet-paid caller.
-- ``POST /v1/x402/verify``   — delegate a payment proof to the
-  ``FacilitatorRouter`` (from :mod:`app.domain.x402.service`); on success the
+- ``POST /v1/x402/verify``   — delegate a payment proof to the coffer
+  facilitator over HTTP (via :class:`CofferFacilitatorClient`); on success the
   verified id is recorded caller-bound + TTL'd in the shared
   :class:`PaymentStore` so replay with ``X-Payment-ID`` passes the middleware.
   Replay rejection (an already-used tx_hash) surfaces as ``410 Gone``.
@@ -14,8 +14,9 @@ Exposes the official x402 HTTP transport surface:
 - ``GET  /v1/x402/health``   — honest acceptance/verification status.
 
 Holds NO verification logic itself — it only wires the middleware's payment
-store to the facilitator layer. The verify/settle endpoints use the
-PROCESS-WIDE ``get_facilitator_router()`` singleton so failure counters,
+store to the facilitator layer. The verify endpoint uses the PROCESS-WIDE
+``get_facilitator_client()`` singleton (coffer over HTTP, fail-closed); the
+settle endpoint uses ``get_facilitator_router()`` so failure counters,
 registered per-network facilitators and the replay-nonce store are shared.
 """
 
@@ -27,6 +28,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from .facilitator_client import get_facilitator_client
 from .middleware import (
     HEADER_PAYMENT_REQUIRED,
     HEADER_X_PAYMENT_ID,
@@ -97,7 +99,7 @@ async def payment_challenge() -> JSONResponse:
 
 @router.post("/verify")
 async def verify(request: Request) -> JSONResponse:
-    """Verify a payment proof via the FacilitatorRouter; record it on success."""
+    """Verify a payment proof via the coffer facilitator (HTTP); record on success."""
     payload = await _read_json(request)
     payment_id = str(payload.get("payment_id") or payload.get("paymentId") or "")
     tx_hash = str(payload.get("tx_hash") or payload.get("transactionHash") or "")
@@ -115,12 +117,12 @@ async def verify(request: Request) -> JSONResponse:
             content={"x402Version": 1, "error": "payment_id and tx_hash are required"},
         )
 
-    result = await get_facilitator_router().verify(
-        payment_id,
-        tx_hash,
-        network,
-        asset,
-        amount_usd,
+    result = await get_facilitator_client().verify(
+        payment_id=payment_id,
+        tx_hash=tx_hash,
+        network=network,
+        asset=asset,
+        amount_usd=amount_usd,
     )
 
     # Agent-identity attribution (W6): optional declared identity, recorded

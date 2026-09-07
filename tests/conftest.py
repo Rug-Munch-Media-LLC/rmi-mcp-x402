@@ -24,6 +24,7 @@ Namespace/import hardening:
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from typing import Any
@@ -85,8 +86,13 @@ for _p in (_VENDOR, _REPO_ROOT):
 
 import httpx  # noqa: E402  (imports must follow the sys.path fix below)
 import pytest  # noqa: E402
+import respx  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 
+from app.domain.x402.facilitator_client import (  # noqa: E402
+    DEFAULT_FACILITATOR_URL,
+    set_facilitator_client,
+)
 from app.domain.x402.middleware import (  # noqa: E402
     X402Middleware,
     get_default_store,
@@ -99,6 +105,12 @@ from app.domain.x402.service import (  # noqa: E402
     resolve_price_usd,
     set_facilitator_router,
 )
+
+# Coffer facilitator HTTP surface the domain /verify now delegates to. The e2e
+# suite routes these calls through respx against the TestFacilitator logic so
+# the 402 -> verify -> replay -> settle path runs un-mocked production code.
+VERIFY_URL = f"{DEFAULT_FACILITATOR_URL}/v1/x402/verify"
+SETTLE_URL = f"{DEFAULT_FACILITATOR_URL}/v1/x402/settle"
 
 CAIP2_BASE = "eip155:8453"
 ASSET = "USDC"
@@ -131,13 +143,21 @@ class TestFacilitator:
     def __init__(self) -> None:
         self._paid: dict[str, dict[str, Any]] = {}
         self.settled_ids: list[str] = []
+        # tx_hash nonce burn (mirrors coffer's replay protection): a verified
+        # tx_hash is consumed and cannot be reused -> 410 Gone (contract G2/G8).
+        self._burned: set[str] = set()
 
     def record_payment(self, tx_hash: str, *, amount_atomic: int) -> None:
         """Simulate an on-chain transfer: tx ``tx_hash`` paid ``amount_atomic``."""
         self._paid[tx_hash] = {"amount_atomic": int(amount_atomic)}
 
     async def verify(self, payment: dict[str, Any]) -> Any:
-        """Decide verified per the on-chain simulation + server pricing."""
+        """Decide verified per the on-chain simulation + server pricing.
+
+        Replay-protected like the real coffer: a successfully-verified tx_hash
+        is burned and a second verify with the same tx_hash is rejected with
+        ``http_status: 410`` (the router maps this to ``410 Gone``).
+        """
         from app.domain.x402.models import VerifyResult
 
         tx_hash = str(payment.get("tx_hash") or "")
@@ -168,6 +188,14 @@ class TestFacilitator:
                 network=network,
                 asset=asset,
             )
+        if tx_hash in self._burned:
+            return VerifyResult(
+                verified=False,
+                reason="transaction already used (replay)",
+                network=network,
+                asset=asset,
+            )
+        self._burned.add(tx_hash)
         return VerifyResult(
             verified=True, reason="", amount_atomic=paid, network=network, asset=asset
         )
@@ -177,6 +205,55 @@ class TestFacilitator:
         tx_hash = str(payment.get("tx_hash") or "")
         self.settled_ids.append(tx_hash)
         return f"0xsettled_{tx_hash}" if tx_hash else None
+
+
+def _verify_result_to_dict(result: Any) -> dict[str, Any]:
+    """Serialize a VerifyResult into the JSON shape coffer returns on /verify."""
+    data = {
+        "verified": bool(result.verified),
+        "reason": result.reason or "",
+        "settlement": result.settlement,
+        "facilitator": result.facilitator or "x402-coffer",
+        "signer": result.signer,
+        "amount_atomic": result.amount_atomic,
+        "network": result.network,
+        "asset": result.asset,
+    }
+    # Replay of an already-used tx_hash -> 410 Gone (contract G2/G8). The
+    # router maps ``http_status`` onto the HTTP response status.
+    if not result.verified and "replay" in (result.reason or "").lower():
+        data["http_status"] = 410
+    return data
+
+
+def _verify_http_handler(facilitator: TestFacilitator):
+    """respx handler: coffer /v1/x402/verify -> TestFacilitator.verify logic."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payment = json.loads(request.content or b"{}")
+        result = await facilitator.verify(payment)
+        return httpx.Response(200, json=_verify_result_to_dict(result))
+
+    return handler
+
+
+def _settle_http_handler(facilitator: TestFacilitator):
+    """respx handler: coffer /v1/x402/settle -> TestFacilitator.settle logic."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payment = json.loads(request.content or b"{}")
+        tx = await facilitator.settle(payment)
+        return httpx.Response(
+            200,
+            json={
+                "settled": bool(tx),
+                "success": bool(tx),
+                "transaction": tx,
+                "reason": "" if tx else "not_settled",
+            },
+        )
+
+    return handler
 
 
 class X402E2EHarness:
@@ -229,15 +306,25 @@ def _build_app() -> tuple[FastAPI, FacilitatorRouter, TestFacilitator]:
 
 @pytest.fixture
 async def e2e() -> X402E2EHarness:
-    """Fresh consolidated app per test; global router/store reset on teardown."""
+    """Fresh consolidated app per test; global router/store reset on teardown.
+
+    The domain /verify now delegates to coffer over HTTP, so the coffer
+    /v1/x402/verify + /v1/x402/settle surface is routed through respx against
+    the TestFacilitator logic — the 402 -> verify -> replay -> settle path
+    still runs un-mocked production code.
+    """
     app, router, facilitator = _build_app()
     harness = X402E2EHarness(app=app, router=router, facilitator=facilitator)
-    try:
-        yield harness
-    finally:
-        # Restore process-global singletons so no state leaks across tests.
-        set_facilitator_router(None)
-        set_default_store(None)
+    with respx.mock:
+        respx.post(VERIFY_URL).mock(side_effect=_verify_http_handler(facilitator))
+        respx.post(SETTLE_URL).mock(side_effect=_settle_http_handler(facilitator))
+        try:
+            yield harness
+        finally:
+            # Restore process-global singletons so no state leaks across tests.
+            set_facilitator_router(None)
+            set_default_store(None)
+            set_facilitator_client(None)
 
 
 @pytest.fixture
