@@ -11,7 +11,7 @@
 
 **The trust signal your token deserves. The honesty your investors expect.**
 
-Get your token independently audited by the team that has scanned **millions** of contracts across **96 chains**. The Rug Munch Verified badge means your token has passed all **32 security detectors** and a full manual code review by our security team.
+Get your token independently audited by the team that has scanned **millions** of contracts across **16 chains**. The Rug Munch Verified badge means your token has passed all **32 security detectors** and a full manual code review by our security team.
 
 [**Apply for Verification →**] [**See Public Registry →**]
 
