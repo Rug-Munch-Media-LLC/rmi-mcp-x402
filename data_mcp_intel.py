@@ -105,6 +105,8 @@ async def intel_wallet_profile(address: str) -> dict:
                 LIMIT 100
             """
             try:
+                # f-string builds only the env-sourced URL; address is parameterized.
+                # nosemgrep: sqlalchemy-execute-raw-query
                 df = db.execute(query, [address, address]).fetchdf()
                 if len(df) > 0:
                     result["historical_patterns"] = {

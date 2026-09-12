@@ -161,8 +161,8 @@ def _get_duckdb():
     if not _duck_initialized:
         db.execute("INSTALL httpfs; LOAD httpfs;")
         if HF_HUB_TOKEN:
-            # nosemgrep: sqlalchemy-execute-raw-query — DuckDB DDL with an
-            # env-sourced token; no user input reaches this statement.
+            # DuckDB DDL with an env-sourced token; no user input reaches this.
+            # nosemgrep: sqlalchemy-execute-raw-query
             db.execute(f"""
                 CREATE SECRET hf_token (
                     TYPE HTTP,
