@@ -174,7 +174,7 @@ jobs:
             --exclude='.venv/' \
             --exclude='docs/x402-official-spec/' \
             --exclude='.forgejo/' \
-            --sarif=semgrep.sarif \
+            --sarif --output=semgrep.sarif \
             app/ && break || { [ "$i" -eq 3 ] && exit 1; echo "semgrep attempt $i failed — retrying"; sleep 15; }
           done
       - uses: actions/upload-artifact@v3
