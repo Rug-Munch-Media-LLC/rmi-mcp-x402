@@ -26,9 +26,8 @@ import os
 from typing import Any
 
 import httpx
+from _coffer_facade import require_payment  # brand facade (Coffer)
 from fastmcp import FastMCP
-
-from _coffer_facade import coffer, require_payment  # brand facade (Coffer)
 
 HEADER_PAYMENT_REQUIRED = "PAYMENT-REQUIRED"
 HEADER_X_PAYMENT_ID = "X-Payment-ID"
@@ -68,7 +67,9 @@ class X402Client:
         headers = dict(request.headers)
         headers[HEADER_X_PAYMENT_ID] = payload["paymentId"]
         return self._client.send(
-            httpx.Request(request.method, str(request.url), headers=headers, content=request.content)
+            httpx.Request(
+                request.method, str(request.url), headers=headers, content=request.content
+            )
         )
 
     def close(self) -> None:

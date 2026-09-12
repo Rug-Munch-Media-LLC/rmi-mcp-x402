@@ -95,15 +95,17 @@ async def intel_wallet_profile(address: str) -> dict:
             chain_dir = "solana" if len(address) <= 44 else "evm"
             archives_url = f"{HF_BASE_URL}/{chain_dir}/"
 
+            # Parameterized: address is user-supplied (MCP tool input) and
+            # must never be interpolated into SQL.
             query = f"""
                 SELECT *
                 FROM read_json_auto('{archives_url}**/*.jsonl.gz', union_by_name=true)
                 WHERE
-                    (LOWER(from_address) = LOWER('{address}') OR LOWER(to_address) = LOWER('{address}'))
+                    (LOWER(from_address) = LOWER(?) OR LOWER(to_address) = LOWER(?))
                 LIMIT 100
             """
             try:
-                df = db.execute(query).fetchdf()
+                df = db.execute(query, [address, address]).fetchdf()
                 if len(df) > 0:
                     result["historical_patterns"] = {
                         "total_matches": len(df),

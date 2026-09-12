@@ -17,9 +17,8 @@ Run:
 
 from __future__ import annotations
 
-from fastapi import FastAPI, Request
-
 from _coffer_facade import coffer  # brand facade (falls back to app.domain.x402)
+from fastapi import FastAPI, Request
 
 router = coffer.get_facilitator_router()
 app = FastAPI(title="Coffer self-hosted facilitator", version="1.0.0")

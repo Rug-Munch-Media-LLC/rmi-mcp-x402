@@ -15,7 +15,7 @@
 SHELL := /bin/bash
 
 # System tool paths (verified 2026-08-21 on this host). Override per-machine.
-RUFF ?= /usr/local/bin/ruff
+RUFF ?= ruff
 MYPY ?= /usr/local/bin/mypy
 PYTEST ?= /usr/local/bin/pytest
 

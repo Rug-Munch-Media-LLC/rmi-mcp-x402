@@ -22,11 +22,10 @@ facilitator.
 
 from __future__ import annotations
 
-from fastapi import FastAPI, Request
-
 # Brand facade: `import coffer; @coffer.require_payment(...)`.
 # Falls back to the current repo layout until the `coffer/` package ships.
-from _coffer_facade import coffer, require_payment
+from _coffer_facade import coffer
+from fastapi import FastAPI, Request
 
 app = FastAPI(title="Coffer one-line paid endpoint", version="1.0.0")
 

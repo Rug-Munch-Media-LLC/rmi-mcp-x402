@@ -5,17 +5,19 @@ wired to actual implementations in app/domain/x402/tools/.
 
 Launch: fastmcp run mcp_stdio.py:mcp  (stdio transport)
 """
+
 from __future__ import annotations
 
 import logging
 import sys
-from pathlib import Path
 from typing import Any
 
-logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger("rmi-netcup.mcp")
-
 from fastmcp import FastMCP
+
+logging.basicConfig(
+    level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(levelname)s %(message)s"
+)
+log = logging.getLogger("rmi-netcup.mcp")
 
 # ── FastMCP app ───────────────────────────────────────────────────
 mcp = FastMCP(
@@ -25,8 +27,18 @@ mcp = FastMCP(
 
 # ── Supported chains ──────────────────────────────────────────────
 SUPPORTED_CHAINS = [
-    "solana", "ethereum", "base", "arbitrum", "optimism",
-    "polygon", "bsc", "tron", "bitcoin", "avalanche", "fantom", "gnosis",
+    "solana",
+    "ethereum",
+    "base",
+    "arbitrum",
+    "optimism",
+    "polygon",
+    "bsc",
+    "tron",
+    "bitcoin",
+    "avalanche",
+    "fantom",
+    "gnosis",
 ]
 
 # ── Tool versioning ───────────────────────────────────────────────
@@ -61,10 +73,19 @@ async def get_token_risk(chain: str, address: str) -> dict:
 
     try:
         from app.domain.x402.tools.token_tools import get_token_risk as _impl
+
         result = await _impl(token_address=address, chain=chain)
         return {"result": result, "tier": "free_or_pro"}
     except ImportError:
-        return {"result": {"token_address": address, "chain": chain, "risk_score": 50, "risk_tier": "UNKNOWN", "risk_factors": []}}
+        return {
+            "result": {
+                "token_address": address,
+                "chain": chain,
+                "risk_score": 50,
+                "risk_tier": "UNKNOWN",
+                "risk_factors": [],
+            }
+        }
 
 
 # ── Tool 2: get_wallet_analysis ───────────────────────────────────
@@ -75,10 +96,19 @@ async def get_wallet_analysis(chain: str, address: str) -> dict:
     """
     try:
         from app.domain.x402.tools.wallet_tools import get_wallet_analysis as _impl
+
         result = await _impl(wallet_address=address, chain=chain)
         return {"result": result}
     except ImportError:
-        return {"result": {"wallet_address": address, "chain": chain, "analysis": "pending", "risk_score": 50, "personas": []}}
+        return {
+            "result": {
+                "wallet_address": address,
+                "chain": chain,
+                "analysis": "pending",
+                "risk_score": 50,
+                "personas": [],
+            }
+        }
 
 
 # ── Tool 3: get_deployer_reputation ───────────────────────────────
@@ -87,12 +117,14 @@ async def get_deployer_reputation(chain: str, address: str) -> dict:
     """Deployer reputation score 0-100 (100=clean, 0=serial rugger).
     Deterministic from on-chain history + news + RAG findings. Cached 1h.
     """
-    return {"result": {
-        "wallet": f"{chain}:{address}",
-        "reputation_score": 50,
-        "tier": "medium",
-        "note": "deployer_reputation backend not yet wired — using default score",
-    }}
+    return {
+        "result": {
+            "wallet": f"{chain}:{address}",
+            "reputation_score": 50,
+            "tier": "medium",
+            "note": "deployer_reputation backend not yet wired — using default score",
+        }
+    }
 
 
 # ── Tool 4: get_news_sentiment ────────────────────────────────────
@@ -107,10 +139,13 @@ async def get_news_sentiment(
     """
     try:
         from app.domain.x402.tools.news_tools import get_news_sentiment as _impl
+
         result = await _impl(token=subject_id)
         return {"result": result}
     except ImportError:
-        return {"result": {"subject": subject_id, "articles": [], "count": 0, "sentiment": "neutral"}}
+        return {
+            "result": {"subject": subject_id, "articles": [], "count": 0, "sentiment": "neutral"}
+        }
 
 
 # ── Tool 5: generate_report ───────────────────────────────────────
@@ -121,10 +156,18 @@ async def generate_report(subject_type: str, subject_id: str) -> dict:
     """
     try:
         from app.domain.x402.tools.report_tools import generate_report as _impl
+
         result = await _impl(subject_type=subject_type, subject_id=subject_id)
         return {"result": result}
     except ImportError:
-        return {"result": {"report_id": "placeholder", "subject_type": subject_type, "subject_id": subject_id, "status": "report backend offline"}}
+        return {
+            "result": {
+                "report_id": "placeholder",
+                "subject_type": subject_type,
+                "subject_id": subject_id,
+                "status": "report backend offline",
+            }
+        }
 
 
 # ── Tool 6: query_catalog ─────────────────────────────────────────
@@ -133,7 +176,9 @@ async def query_catalog(query: str) -> dict:
     """Natural language catalog query. Returns matching tokens, wallets,
     deployers, news, RAG findings. $0.05/query.
     """
-    return {"result": {"query": query, "hits": [], "count": 0, "note": "catalog backend not yet wired"}}
+    return {
+        "result": {"query": query, "hits": [], "count": 0, "note": "catalog backend not yet wired"}
+    }
 
 
 # ── Tool 7: find_similar_tokens ───────────────────────────────────
@@ -144,7 +189,13 @@ async def find_similar_tokens(chain: str, address: str, limit: int = 10) -> dict
     """
     if limit > 50:
         limit = 50
-    return {"result": {"subject": f"{chain}:{address}", "similar": [], "note": "vector similarity backend not yet wired"}}
+    return {
+        "result": {
+            "subject": f"{chain}:{address}",
+            "similar": [],
+            "note": "vector similarity backend not yet wired",
+        }
+    }
 
 
 # ── Tool 8: resolve_entity ────────────────────────────────────────
@@ -154,7 +205,14 @@ async def resolve_entity(wallet_id: str) -> dict:
     across chains via SAME_AS / FUNDED_BY_SAME / CLONE_OF / BEHAVIORAL_MATCH edges.
     $0.10/query.
     """
-    return {"result": {"wallet_id": wallet_id, "linked_wallets": [], "edges": [], "note": "entity resolution backend not yet wired"}}
+    return {
+        "result": {
+            "wallet_id": wallet_id,
+            "linked_wallets": [],
+            "edges": [],
+            "note": "entity resolution backend not yet wired",
+        }
+    }
 
 
 # ── Tool 9: analytics_query ───────────────────────────────────────
@@ -170,7 +228,15 @@ async def analytics_query(sql: str, params: list | None = None, max_rows: int = 
         return {"error": "only SELECT/WITH/SHOW/DESCRIBE queries allowed"}
     if max_rows > 10000:
         max_rows = 10000
-    return {"result": {"rows": [], "count": 0, "truncated": False, "engine": "duckdb", "note": "duckdb backend not yet wired"}}
+    return {
+        "result": {
+            "rows": [],
+            "count": 0,
+            "truncated": False,
+            "engine": "duckdb",
+            "note": "duckdb backend not yet wired",
+        }
+    }
 
 
 # ── Tool 10: mcp_discover ─────────────────────────────────────────
@@ -200,14 +266,16 @@ async def mcp_discover(include_deprecated: bool = False, category: str | None = 
         name = t["name"]
         if not include_deprecated and name in TOOL_DEPRECATED:
             continue
-        tools_out.append({
-            "name": name,
-            "version": TOOL_VERSIONS.get(name, "1.0.0"),
-            "description": getattr(mcp, "_tools", {}).get(name, {}).get("description", ""),
-            "input_schema": t["input"],
-            "deprecated": name in TOOL_DEPRECATED,
-            "successor": TOOL_SUCCESSORS.get(name),
-        })
+        tools_out.append(
+            {
+                "name": name,
+                "version": TOOL_VERSIONS.get(name, "1.0.0"),
+                "description": getattr(mcp, "_tools", {}).get(name, {}).get("description", ""),
+                "input_schema": t["input"],
+                "deprecated": name in TOOL_DEPRECATED,
+                "successor": TOOL_SUCCESSORS.get(name),
+            }
+        )
 
     return {
         "result": {
@@ -229,7 +297,9 @@ async def status_check(include_metrics: bool = True) -> dict:
     """
     subsystems = {}
     try:
-        import asyncio, time
+        import asyncio
+        import time
+
         import httpx
 
         services = {
