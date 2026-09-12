@@ -11,6 +11,7 @@ The core business logic for the verification program. This service:
 CRITICAL: This service NEVER softens findings. NEVER changes results
 based on pressure. NEVER accepts payment to look the other way.
 """
+
 from __future__ import annotations
 
 import logging
@@ -55,9 +56,7 @@ class VerifiedBadgeService:
     CRITICAL_FINDING_AUTO_FAIL = True  # Any critical = auto reject
     HIGH_FINDING_THRESHOLD = 3  # 3+ high = auto reject
 
-    async def submit_application(
-        self, application: TokenApplication
-    ) -> VerificationResult:
+    async def submit_application(self, application: TokenApplication) -> VerificationResult:
         """Accept a new application and begin review.
 
         Args:
@@ -122,13 +121,9 @@ class VerifiedBadgeService:
             errors.append("Primary contact email is required")
 
         if errors:
-            raise ValueError(
-                f"Mandatory disclosures missing: {'; '.join(errors)}"
-            )
+            raise ValueError(f"Mandatory disclosures missing: {'; '.join(errors)}")
 
-    async def run_full_scan(
-        self, application: TokenApplication
-    ) -> list[DetectorResult]:
+    async def run_full_scan(self, application: TokenApplication) -> list[DetectorResult]:
         """Run all 32 detectors on the token.
 
         Returns:
@@ -171,9 +166,7 @@ class VerifiedBadgeService:
         )
         return result
 
-    async def finalize_review(
-        self, result: VerificationResult
-    ) -> VerificationResult:
+    async def finalize_review(self, result: VerificationResult) -> VerificationResult:
         """Finalize the review and produce a verdict.
 
         This is called when the review is complete. It:
@@ -188,12 +181,8 @@ class VerifiedBadgeService:
         """
         # Tally findings
         result.total_detectors_run = len(result.scan_results)
-        result.detectors_passed = sum(
-            1 for r in result.scan_results if r.passed
-        )
-        result.detectors_failed = sum(
-            1 for r in result.scan_results if not r.passed
-        )
+        result.detectors_passed = sum(1 for r in result.scan_results if r.passed)
+        result.detectors_failed = sum(1 for r in result.scan_results if not r.passed)
 
         for finding in result.manual_findings:
             if finding.severity == FindingSeverity.CRITICAL:
@@ -221,9 +210,7 @@ class VerifiedBadgeService:
         else:
             # Calculate overall score (0-100)
             if result.total_detectors_run > 0:
-                detector_score = (
-                    result.detectors_passed / result.total_detectors_run
-                ) * 100
+                detector_score = (result.detectors_passed / result.total_detectors_run) * 100
             else:
                 detector_score = 0
 
@@ -239,8 +226,7 @@ class VerifiedBadgeService:
             if result.overall_score >= 80 and result.critical_findings == 0:
                 result.status = VerificationStatus.VERIFIED
                 result.verdict_summary = (
-                    f"VERIFIED: Score {result.overall_score:.0f}/100. "
-                    "No critical or high findings."
+                    f"VERIFIED: Score {result.overall_score:.0f}/100. No critical or high findings."
                 )
             elif result.overall_score >= 60 and result.critical_findings == 0:
                 result.status = VerificationStatus.VERIFIED_CAVEATS
@@ -260,7 +246,8 @@ class VerifiedBadgeService:
         # Generate public summary
         result.public_summary = self._generate_public_summary(result)
         result.public_risks = [
-            f.description for f in result.manual_findings
+            f.description
+            for f in result.manual_findings
             if f.severity in (FindingSeverity.HIGH, FindingSeverity.CRITICAL)
         ]
         result.public_strengths = [
@@ -294,9 +281,7 @@ class VerifiedBadgeService:
             f"{result.low_findings} low"
         )
 
-    async def issue_badge(
-        self, result: VerificationResult
-    ) -> VerifiedToken:
+    async def issue_badge(self, result: VerificationResult) -> VerifiedToken:
         """Issue the Rug Munch Verified badge.
 
         Args:
@@ -323,8 +308,7 @@ class VerifiedBadgeService:
             status=result.status,
             verified_at=datetime.now(UTC),
             last_monitored_at=datetime.now(UTC),
-            badge_expires_at=datetime.now(UTC)
-            + timedelta(days=self.ANNUAL_RENEWAL_DAYS),
+            badge_expires_at=datetime.now(UTC) + timedelta(days=self.ANNUAL_RENEWAL_DAYS),
             latest_result=result,
             is_public=True,
             public_slug=self._generate_slug(result.application),
@@ -337,15 +321,14 @@ class VerifiedBadgeService:
     def _generate_slug(self, application: TokenApplication) -> str:
         """Generate a URL-safe slug for the public page."""
         import re
+
         slug = application.token_symbol.lower()
         slug = re.sub(r"[^a-z0-9-]", "-", slug)
         slug = re.sub(r"-+", "-", slug).strip("-")
         # Add chain for uniqueness
         return f"{slug}-{application.chain}"
 
-    async def revoke_badge(
-        self, token: VerifiedToken, reason: str, evidence: str
-    ) -> VerifiedToken:
+    async def revoke_badge(self, token: VerifiedToken, reason: str, evidence: str) -> VerifiedToken:
         """Revoke a previously issued badge.
 
         Called when:
@@ -375,9 +358,7 @@ class VerifiedBadgeService:
         )
         return token
 
-    async def monitor_token(
-        self, token: VerifiedToken
-    ) -> list[DetectorResult]:
+    async def monitor_token(self, token: VerifiedToken) -> list[DetectorResult]:
         """Re-run all detectors on a verified token (hourly monitoring).
 
         Returns:
@@ -389,10 +370,7 @@ class VerifiedBadgeService:
         results: list[DetectorResult] = []
 
         # Check for new critical findings
-        has_critical = any(
-            r.severity == FindingSeverity.CRITICAL and not r.passed
-            for r in results
-        )
+        has_critical = any(r.severity == FindingSeverity.CRITICAL and not r.passed for r in results)
         if has_critical:
             await self.revoke_badge(
                 token,
@@ -403,9 +381,7 @@ class VerifiedBadgeService:
         token.last_monitored_at = datetime.now(UTC)
         return results
 
-    async def check_payment_status(
-        self, token: VerifiedToken
-    ) -> bool:
+    async def check_payment_status(self, token: VerifiedToken) -> bool:
         """Check if the token is up to date on monitoring payments."""
         if not token.monthly_monitoring:
             return True  # Not enrolled, no payment required

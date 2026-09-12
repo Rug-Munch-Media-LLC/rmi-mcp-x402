@@ -67,14 +67,20 @@ async def token_watch_create(req: WatchCreateRequest, request: Request):
     if req.condition not in valid_conditions:
         return JSONResponse(
             status_code=400,
-            content={"error": f"Invalid condition '{req.condition}'. Must be one of: {', '.join(valid_conditions)}"},
+            content={
+                "error": f"Invalid condition '{req.condition}'. Must be one of: {', '.join(valid_conditions)}"
+            },
         )
 
     # Clamp check interval
     check_interval = max(60, min(3600, req.check_interval))
 
     # Get creator from headers
-    created_by = request.headers.get("x-wallet-address", "") or request.headers.get("X-Device-ID", "") or "anonymous"
+    created_by = (
+        request.headers.get("x-wallet-address", "")
+        or request.headers.get("X-Device-ID", "")
+        or "anonymous"
+    )
 
     try:
         svc = get_token_watch_service()

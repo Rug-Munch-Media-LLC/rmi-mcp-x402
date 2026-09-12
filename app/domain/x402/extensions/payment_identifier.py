@@ -189,12 +189,16 @@ class PaymentIdentifierStore:
         semantics per spec §Idempotency Behavior table.
         """
         if not payment_id:
-            return PaymentIdReplay(
-                state="missing",
-                reason="payment id missing",
-            ) if required else PaymentIdReplay(
-                state="accepted",
-                reason="no payment id (idempotency skipped)",
+            return (
+                PaymentIdReplay(
+                    state="missing",
+                    reason="payment id missing",
+                )
+                if required
+                else PaymentIdReplay(
+                    state="accepted",
+                    reason="no payment id (idempotency skipped)",
+                )
             )
         if not is_valid_payment_id(payment_id):
             return PaymentIdReplay(state="missing", reason="invalid payment id")

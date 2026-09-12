@@ -302,9 +302,7 @@ async def call_tool(name: str, arguments: dict) -> dict:
                 }
                 for r in rows
             ]
-            avg_sent = sum(a["sentiment_score"] or 0 for a in articles) / max(
-                1, len(articles)
-            )
+            avg_sent = sum(a["sentiment_score"] or 0 for a in articles) / max(1, len(articles))
             return {
                 "result": {
                     "subject": subject,

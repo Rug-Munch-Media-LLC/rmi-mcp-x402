@@ -4,6 +4,7 @@ Data models for the token verification program. When a project applies
 for the Rug Munch Verified badge, we run all 32 detectors + manual
 review. The result is stored in the verified_tokens table.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

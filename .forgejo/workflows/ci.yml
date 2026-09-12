@@ -109,7 +109,7 @@ jobs:
           uv venv --python ${{ env.PYTHON_VERSION }} .venv
       - name: Install deps
         run: |
-          uv pip install --python .venv/bin/python ruff mypy pytest pytest-asyncio pytest-cov httpx -e .
+          uv pip install --python .venv/bin/python ruff mypy pytest pytest-asyncio pytest-cov respx httpx -e .
       - name: Lint (ruff)
         run: source .venv/bin/activate && ruff check app tests
       - name: Typecheck (mypy — ratchet, baseline 18)

@@ -4,6 +4,7 @@ This middleware-style helper enriches scan responses with verification
 status from the Rug Munch Verified badge system. AI agents and the
 web UI can use this to show the Rug Munch Verified badge on results.
 """
+
 from __future__ import annotations
 
 import logging
@@ -38,9 +39,7 @@ async def enrich_with_verified_badge(
     """
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(
-                VERIFIED_CHECK_URL.format(chain=chain, address=address)
-            )
+            resp = await client.get(VERIFIED_CHECK_URL.format(chain=chain, address=address))
             if resp.status_code == 200:
                 badge = resp.json()
                 response_data["is_verified"] = badge.get("is_verified", False)
