@@ -1,13 +1,12 @@
 {
-  "comment": "Grandfathered offenders. Files may SHRINK freely; GROWTH or NEW offenders fail the gate. monkeypatch counts only go down.",
-  "max_file_lines": 1500,
-  "max_func_lines": 150,
-  "files": {},
-  "monkeypatch": {
-    "tests/test_web_scrape_tool.py": 2,
-    "tests/test_x402_ratelimit.py": 3,
-    "tests/test_x402_spending.py": 2,
-    "tests/test_x402_store_persistence.py": 1,
-    "tests/test_x402_webhooks.py": 1
-  }
+	"comment": "Grandfathered offenders. Files may SHRINK freely; GROWTH or NEW offenders fail the gate. monkeypatch counts only go down.",
+	"max_file_lines": 1500,
+	"max_func_lines": 150,
+	"files": {},
+	"monkeypatch": {
+		"tests/test_x402_ratelimit.py": 3,
+		"tests/test_x402_spending.py": 2,
+		"tests/test_x402_store_persistence.py": 1,
+		"tests/test_x402_webhooks.py": 1
+	}
 }

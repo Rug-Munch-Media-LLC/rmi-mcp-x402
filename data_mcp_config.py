@@ -16,8 +16,25 @@ if os.path.exists(_env_file):
                 k, v = line.strip().split("=", 1)
                 os.environ.setdefault(k, v)
 
+# Pry internal credential — sourced from the fleet secrets env (lives outside
+# the public repo tree, same pattern as /srv/rmi-infra/.env.secrets). Sent as
+# a Bearer token by data_mcp_web so internal scrapes bypass the x402 payment
+# gate: the gate monetizes KEYLESS external agent traffic; credentialed
+# internal use is metered, not payment-challenged (matches pry CLI behavior).
+_pry_secrets = "/srv/rmi-infra/.env.pry"
+if os.path.exists(_pry_secrets):
+    try:
+        with open(_pry_secrets) as f:
+            for line in f:
+                if line.startswith("PRY_API_KEY="):
+                    os.environ.setdefault("PRY_API_KEY", line.strip().split("=", 1)[1])
+                    break
+    except OSError:
+        pass
+
 HELIUS_KEY = os.getenv("HELIUS_API_KEY", "")
 PRY_API_URL = os.getenv("PRY_API_URL", "http://127.0.0.1:8005")
+PRY_API_KEY = os.getenv("PRY_API_KEY", "").strip()
 HELIUS_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_KEY}" if HELIUS_KEY else None
 
 # ── RPC Endpoints ─────────────────────────────────────────────────
