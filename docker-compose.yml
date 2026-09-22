@@ -43,7 +43,9 @@ services:
     security_opt:
       - no-new-privileges:true
     cpus: "1.0"
-    mem_limit: 1g
+    # 2026-09-22: 1g was not enough — the app was OOM-killed ~3s into startup
+    # (137, OOMKilled sometimes unset). A 3g test container stayed up; this is the fix.
+    mem_limit: 3g
     pids_limit: 512
 
   redis:
