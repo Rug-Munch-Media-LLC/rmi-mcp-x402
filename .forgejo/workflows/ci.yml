@@ -130,7 +130,7 @@ jobs:
             --cov=app --cov-report=term --cov-report=xml:coverage.xml \
             --cov-fail-under=30 --ignore-glob='*integration*' 2>&1 || echo "Coverage below threshold (non-blocking)"
       - name: Upload coverage
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v5.0.0
         if: always()
         with:
           name: coverage-report
@@ -177,7 +177,7 @@ jobs:
             --sarif --output=semgrep.sarif \
             app/ && break || { [ "$i" -eq 3 ] && exit 1; echo "semgrep attempt $i failed — retrying"; sleep 15; }
           done
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v5.0.0
         with:
           name: semgrep-report
           path: semgrep.sarif
