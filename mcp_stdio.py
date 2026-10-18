@@ -57,7 +57,7 @@ TOOL_VERSIONS: dict[str, str] = {
 }
 
 MCP_SERVER_VERSION = "5.0.0"
-MCP_PROTOCOL_VERSION = "2024-11-05"
+MCP_PROTOCOL_VERSION = "2026-07-28"
 
 
 # ── Tool 1: get_token_risk ────────────────────────────────────────

@@ -52,5 +52,7 @@ __all__ = [
 ]
 
 if __name__ == "__main__":
-    app = mcp.streamable_http_app()
+    # Stateless: no session id to negotiate. Every caller (agents, health
+    # probes, curl, the Cinnabox wrappers) can POST a tool call directly.
+    app = mcp.streamable_http_app(stateless_http=True)
     uvicorn.run(app, host="0.0.0.0", port=8001)
