@@ -1,0 +1,29 @@
+[Unit]
+Description=Rug Munch Intelligence MCP Store (x402 pay-per-call, Coffer facilitator)
+Documentation=file:/opt/rmi-mcp-store/docs/MCP-STORE.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# /opt/rmi-mcp-store is a symlink to the deployed checkout (see MCP-STORE.md).
+WorkingDirectory=/opt/rmi-mcp-store
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+# Root-owned, mode 0600. Absent file must not stop the unit from booting.
+EnvironmentFile=-/etc/rmi-mcp-store/env
+ExecStart=/opt/rmi-mcp-store/.venv/bin/python -m store.main
+Restart=always
+RestartSec=3
+User=root
+# Only the SQLite state dir is writable; the code tree stays read-only.
+StateDirectory=rmi-mcp-store
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/rmi-mcp-store
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
