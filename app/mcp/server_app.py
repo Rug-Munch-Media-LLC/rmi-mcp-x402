@@ -216,10 +216,13 @@ class X402MCPServer:
             if self._ai_guard.active:
                 is_safe, reason = await self._ai_guard.check_request(request)
                 if not is_safe:
+                    # Structured, machine-readable block. The guard only
+                    # returns safe reason strings (AI_GUARD_* codes) — no
+                    # internal exception text or body contents is ever leaked.
                     return JSONResponse(
                         {
                             "error": "Request blocked by AI Guard",
-                            "code": "AI_GUARD_BLOCKED",
+                            "code": reason if reason else "AI_GUARD_BLOCKED",
                             "reason": reason,
                         },
                         status_code=403,
