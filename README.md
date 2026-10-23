@@ -1,9 +1,9 @@
 # RMI MCP + x402 Gateway
 
-**Model Context Protocol (MCP) server and x402 payment gateway for Rug Munch
-Intelligence.** Exposes typed RMI crypto-security tools to AI agents and
-settles per-call x402 payments — so agents can discover, pay for, and consume
-token-risk and wallet-intelligence tools without learning a bespoke API.
+> Model Context Protocol server exposing typed RMI crypto-security tools to AI agents, settled per call with x402 USDC payments.
+
+**License:** [MIT](LICENSE) · **Canonical:** https://git.rugmunch.io/RugMunchMedia/rmi-mcp-x402
+**Mirrors:** [GitHub](https://github.com/Rug-Munch-Media-LLC) · [GitLab](https://gitlab.com/rug-munch-media-group) · [Codeberg](https://codeberg.org/RugMunchMedia)
 
 [![license MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
