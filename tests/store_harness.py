@@ -2,11 +2,18 @@
 
 Deliberately not a pytest fixture module: the repo's ``tests/conftest.py`` is
 the existing Coffer end-to-end harness and must not be touched or shadowed.
+
+DI seam: ``store.app`` and ``store.capabilities`` hold module attributes that
+the production code resolves lazily at request time. Tests swap them for the
+whole ``store_app(...)`` context and the originals are restored on exit —
+explicit, observable, no monkeypatching.
 """
 
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,6 +21,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from store import app as app_module  # noqa: E402
+from store import capabilities as capabilities_module  # noqa: E402
 from store.config import Settings  # noqa: E402
 from store.store_db import StoreDB  # noqa: E402
 
@@ -41,6 +49,13 @@ def make_settings(tmp_path: Path) -> Settings:
     )
 
 
+async def _default_capability(
+    capability: str, args: dict[str, Any], *, backend_url: str, timeout: float
+) -> dict[str, Any]:
+    """Stub the backend capability call; answers offline."""
+    return {"ok": True, "capability": capability, "chain": args.get("chain", "base")}
+
+
 @dataclass(slots=True)
 class Harness:
     """A wired store: settings, db and an HTTP client."""
@@ -50,25 +65,41 @@ class Harness:
     client: Any
 
 
-def build(tmp_path: Path, monkeypatch: Any, *, stub_capability: bool = True) -> Harness:
-    """Build an isolated store instance with the capability layer stubbed."""
+@dataclass(slots=True)
+class Swap:
+    """Swap one module attribute for a context; restore the original on exit."""
+
+    module: object
+    attr: str
+    new: Any
+    original: Any = None
+
+    def __enter__(self) -> "Swap":
+        self.original = getattr(self.module, self.attr)
+        setattr(self.module, self.attr, self.new)
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        setattr(self.module, self.attr, self.original)
+
+
+@contextmanager
+def store_app(
+    tmp_path: Path,
+    *,
+    capability: Any = None,
+) -> Iterator[Harness]:
+    """Isolated store instance; capability layer stubbed unless overridden."""
     from fastapi.testclient import TestClient
 
     settings = make_settings(tmp_path)
     db = StoreDB(settings.db_path)
-    monkeypatch.setattr(app_module, "_settings", settings)
-    monkeypatch.setattr(app_module, "_db", db)
-
-    if stub_capability:
-
-        async def fake_capability(
-            capability: str, args: dict[str, Any], *, backend_url: str, timeout: float
-        ) -> dict[str, Any]:
-            return {"ok": True, "capability": capability, "chain": args.get("chain", "base")}
-
-        monkeypatch.setattr("store.capabilities.call_capability", fake_capability)
-
-    return Harness(settings=settings, db=db, client=TestClient(app_module.app))
+    with (
+        Swap(app_module, "_settings", settings),
+        Swap(app_module, "_db", db),
+        Swap(capabilities_module, "call_capability", capability or _default_capability),
+    ):
+        yield Harness(settings=settings, db=db, client=TestClient(app_module.app))
 
 
 def call(
