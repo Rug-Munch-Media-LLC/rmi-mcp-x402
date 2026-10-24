@@ -1,159 +1,85 @@
-# RMI MCP + x402 Gateway
+# rmi-mcp-x402
 
-> Model Context Protocol server exposing typed RMI crypto-security tools to AI agents, settled per call with x402 USDC payments.
+An MCP server whose tools are paid per call over x402: an agent discovers a tool,
+gets a 402 with a price, pays in USDC on-chain, and retries with proof of payment.
+The facilitator is bundled, so it runs as one stack.
 
-**License:** [MIT](LICENSE) · **Canonical:** https://git.rugmunch.io/RugMunchMedia/rmi-mcp-x402
-**Mirrors:** [GitHub](https://github.com/Rug-Munch-Media-LLC) · [GitLab](https://gitlab.com/rug-munch-media-group) · [Codeberg](https://codeberg.org/RugMunchMedia)
+**Status:** beta · **Licence:** MIT, see [LICENSE](LICENSE).
 
-[![license MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
-[![x402 v1+v2](https://img.shields.io/badge/x402-v1%20%2B%20v2-blue)](#x402-payment-rail)
-[![MCP](https://img.shields.io/badge/MCP-typed%20tools-purple)](https://modelcontextprotocol.io/)
-
-> **Status: Beta / active development.** Tool schemas and payment flow are
-> stable; see [Honest status](#honest-status) for what is and isn't live.
-
-## What It Is
-
-This repo is the MCP-facing edge of the Rug Munch Intelligence platform:
-
-- **MCP server** — typed tools over streamable HTTP / stdio, consumable from
-  Claude Code, opencode, Cursor, or any MCP-capable agent.
-- **x402 gateway** — gates premium tool calls behind per-request crypto
-  micropayments, delegating verification and settlement to a self-hosted
-  facilitator (see below).
-- **Verified badge domain** — the badge logic for verified RMI listings.
-
-It is **not** the scanning engine (that lives in `rmi-backend`) or the wallet
-generator (that lives in `walletpress`).
-
-## Tool Catalog
-
-The gateway publishes a typed catalog (`app/mcp/server.py`). Core tools:
-
-| Tool | Purpose |
-|------|---------|
-| `get_token_risk` | 0–100 token risk score with category breakdown |
-| `get_wallet_analysis` | Wallet forensics: holdings, counterparties, labels |
-| `get_deployer_reputation` | Deployer history and reputation signals |
-| `get_news_sentiment` | News and social sentiment for an asset |
-| `generate_report` | Structured investigation report |
-| `query_catalog` | Search the tool/asset catalog |
-| `find_similar_tokens` | Similarity lookup across indexed tokens |
-
-The stdio surface (`mcp_stdio.py`) exposes the catalog over
-`fastmcp run mcp_stdio.py:mcp`.
-
-## x402 Payment Rail
-
-The gateway **does not verify payments in-house**. It delegates verification
-and settlement to a self-hosted [`x402-coffer`](https://git.rugmunch.io/RugMunchMedia/x402-coffer)
-facilitator over HTTP. Coffer is the source of truth for whether a payment is
-real; the gateway's `X-Payment-ID` gate **fails closed** when coffer cannot be
-reached.
-
-| Setting | Default | Meaning |
-|---------|---------|---------|
-| `X402_FACILITATOR_URL` | `http://localhost:8670` | Base URL of the coffer deployment |
-
-Endpoints the gateway calls on coffer:
-
-| Gateway call | Coffer endpoint | Purpose |
-|--------------|-----------------|---------|
-| payment re-check | `POST {X402_FACILITATOR_URL}/v1/x402/verify` | Confirm an `X-Payment-ID` is verified (caller-bound, TTL'd) |
-| settlement | `POST {X402_FACILITATOR_URL}/v1/x402/settle` | Settle a verified payment |
-
-**Fail-closed contract:** a payment-gated call is allowed through only when
-coffer answers `verified: true`. If coffer is unreachable, times out, or
-returns 5xx after bounded retries, the gateway answers **402 Payment Required**
-— it never falls back to allowing the call through unverified. The gateway's
-local payment store is caller/tx *memory* only; it cannot self-verify.
-
-## Architecture
-
-```
-Agent (MCP client)
-   │  tools/list, tools/call
-   ▼
-rmi-mcp-x402 gateway ──── app/mcp/         MCP server, tool catalog, tool manager
-   │                 ├── app/domain/x402/  payment middleware, models, service
-   │                 ├── app/domain/verified/  badge domain
-   │                 └── app/api/v1/       HTTP API routes
-   │  verify / settle (HTTP)
-   ▼
-x402-coffer (self-hosted facilitator)
-   │
-   ▼
-RMI backend (security data) · Qdrant · Redis · Postgres
-```
+Canonical: https://git.rugmunch.io/RugMunchMedia/rmi-mcp-x402
 
 ## Quickstart
 
+Python 3.11+, Redis, and a receiving address.
+
 ```bash
-# Install (editable)
-make install
-
-# Run the MCP server (streamable HTTP, :8001)
-make dev
-
-# Run the x402 facilitator locally (:8001)
-make run
-
-# Full stack: coffer + redis via Docker Compose
-make up
+git clone https://git.rugmunch.io/RugMunchMedia/rmi-mcp-x402.git
+cd rmi-mcp-x402
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env      # X402_WALLET, X402_SELF_FACILITATE, REDIS_URL
+python data_mcp_server.py
 ```
 
-Run `make help` for all targets. Quality gates: `make lint`, `make typecheck`,
-`make test`, `make security`, and `make ci` (ruff + mypy + pytest).
+Compose runs the MCP server and its facilitator together:
+
+```bash
+docker compose up -d      # services: rmi, coffer, redis
+```
+
+Read-only tools answer without payment. Anything priced returns a 402 first —
+that is the expected first response, not a failure.
+
+## What it does
+
+- **Paid MCP tools.** Each tool declares a price; the server issues the x402
+  challenge, verifies the payment header, and only then runs the handler.
+- **Bundled facilitator.** `coffer/` settles payments and keeps receipts in Redis,
+  so a replay of the same payment header is rejected.
+- **Tool families.** Chain data (`data_mcp_evm`, `data_mcp_solana`), intelligence
+  (`data_mcp_intel`), web extraction (`data_mcp_web`) and infra status
+  (`data_mcp_infra`) are separate modules over one registration point.
+- **Client SDK.** `coffer_client/` is what an agent-side caller uses: build the
+  request, pay, retry, and check the receipt.
+
+## How it is put together
+
+```
+data_mcp_server.py     MCP entry point, tool registration
+data_mcp_*.py          tool families
+app/                   x402 middleware, pricing, verification
+coffer/                facilitator: verify, settle, receipts
+coffer_client/         caller-side payment helper
+tests/                 includes bypass and replay cases
+```
 
 ## Configuration
 
-Wallets resolve from the environment only — there are **no hardcoded wallet
-defaults**. Unset resolves to `""` and the deployment **fails closed**:
-`load_settings()` raises at boot and the app refuses to serve an unconfigured
-402.
+| Variable | Purpose |
+|---|---|
+| `X402_WALLET` | generic receiving address; a payment to anything else is rejected |
+| `X402_WALLET_SOLANA`, `X402_WALLET_BASE`, `X402_WALLET_ETH`, `X402_WALLET_ARBITRUM`, `X402_WALLET_OPTIMISM`, `X402_WALLET_POLYGON`, `X402_WALLET_TRON` | per-network payees |
+| `X402_SELF_FACILITATE` | settle through the bundled facilitator rather than an upstream one |
+| `X402_SELF_FACILITATOR_KEY`, `X402_SELF_FACILITATOR_RPC` | signer and node for settlement |
+| `REDIS_URL` | receipt store — without it replay protection is off |
+| `HELIUS_API_KEY` | Solana RPC for the chain-data tools |
+| `PRY_API_URL`, `PRY_API_KEY` | scrape backend used by the web tools |
+| `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_PORT` | intelligence store for the intel tools |
 
-| Env var | Chain | Purpose |
-|---------|-------|---------|
-| `X402_WALLET` | EVM — default payee for all `eip155:*` | Receiving address |
-| `X402_WALLET_SOLANA` | Solana (`solana:mainnet`) | Receiving address |
-| `X402_WALLET_TRON` | TRON (`tron:mainnet`) | Receiving address |
-| `X402_FACILITATOR_URL` | — | Coffer facilitator base URL |
-| `REDIS_URL` | — | Payment nonce / replay store |
+Prices and payee addresses are configuration, never hardcoded; a fork with a
+different payee is a config change.
 
-Per-network EVM overrides: `X402_WALLET_BASE` / `_ETH` / `_ARBITRUM` /
-`_OPTIMISM` / `_POLYGON` (fall back to `X402_WALLET`). Old names are honored
-as read-time aliases only.
+## Known limits
 
-## Honest Status
+- Settlement needs a funded payer and a reachable RPC. Testnet is the sane default
+  while you integrate.
+- Receipt storage is Redis with no long-term archive; losing the keys loses the
+  audit trail.
+- Tool prices are set by the operator. This repo does not ship a marketplace or
+  discovery service.
+- The 402 flow assumes the client can sign. An agent without a wallet can only use
+  the free tools.
 
-We do not overclaim. Scaffolded paths are never reported as verified:
+## Licence
 
-- **TRON** is structural work only — shape, price, and asset are validated,
-  and health reports `tron=scaffolded:needs_facilitator` until a real
-  facilitator implementation is registered.
-- **Verifying is not settling.** Self-verify paths read on-chain receipts only
-  and fail closed with `needs_facilitator` rather than fabricating a settlement.
-- **A bare HTTP-200 is not proof of payment** — an explicit verification or
-  settlement signal is required before reporting success.
-
-## Documentation
-
-- [docs.cryptorugmunch.com/rmi-mcp-x402](https://docs.cryptorugmunch.com/rmi-mcp-x402) — product docs
-- [`docs/X402-SPEC-CONTRACT.md`](docs/X402-SPEC-CONTRACT.md) — x402 conformance contract
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — module layering and the 402 flow
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to add a tool or a network
-
-## Related Repositories
-
-| Repo | Purpose |
-|------|---------|
-| [`x402-coffer`](https://git.rugmunch.io/RugMunchMedia/x402-coffer) | Self-hosted x402 payment facilitator |
-| [`rmi-backend`](https://git.rugmunch.io/RugMunchMedia/rmi-backend) | Intelligence engine and data APIs |
-| [`rmi-frontend`](https://git.rugmunch.io/RugMunchMedia/rmi-frontend) | Web dashboard |
-| [`walletpress`](https://git.rugmunch.io/RugMunchMedia/walletpress) | Wallet management |
-
-## License
-
-MIT — see [LICENSE](LICENSE). Built by
-[Rug Munch Media LLC](https://rugmunch.io).
+MIT.
