@@ -10,6 +10,32 @@ from typing import Any
 
 from data_mcp_intel_deps import IntelDeps
 
+SOL_ADDR = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
+EVM_ADDR = "0xAbC0000000000000000000000000000000000001"
+PROFILE_KEYS = [
+    "address",
+    "queried_at",
+    "live_balances",
+    "entity_tags",
+    "historical_patterns",
+    "risk_signals",
+]
+TAG = {
+    "wallet_address": EVM_ADDR,
+    "label_tag": "scammer",
+    "confidence_score": 95,
+    "chain": "ethereum",
+    "source": "manual",
+    "entity_name": "Bad Corp",
+    "entity_type": "exchange",
+    "description": "labelled by hand",
+}
+TX = {
+    "block_time": "2026-01-02T00:00:00Z",
+    "from_address": EVM_ADDR,
+    "to_address": "0x0000000000000000000000000000000000000002",
+}
+
 
 class FakeRPC:
     """Stands in for `data_mcp_rpc._rpc_call`, answering per JSON-RPC method."""

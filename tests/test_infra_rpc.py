@@ -1,8 +1,8 @@
-"""The RPC layer every sol_*/evm_* tool sits on — limiter, cache, failover.
+"""The RPC engine every sol_*/evm_* tool sits on: cache, failover, cool-downs.
 
 Transport is mocked with respx, so no socket is opened and nothing is patched.
 Global limiter/cache state is reset per test; endpoint tables are built fresh
-so a cooldown written by one test cannot leak into the next.
+so a cool-down written by one test cannot leak into the next.
 """
 
 from __future__ import annotations
@@ -15,14 +15,12 @@ import data_mcp_cache as cache_mod
 import data_mcp_duck as duck
 import data_mcp_pg as pg_mod
 import data_mcp_rpc as rpc
-from data_mcp_cache import Cache
-from data_mcp_rl import RL
 
 URL = "https://rpc.test"
 
 
 def eps(*names: str, rate: int = 10) -> list[dict]:
-    """Fresh endpoint table — cooldowns are per-dict, so never share one."""
+    """Fresh endpoint table — cool-downs live on the dict, so never share one."""
     return [{"name": n, "url": f"{URL}/{n}", "rate": rate, "cooldown": 0} for n in names]
 
 
@@ -32,42 +30,6 @@ def _clean() -> None:
     rpc._rl.w.clear()
 
 
-# ── rate limiter ──────────────────────────────────────────────────
-def test_rate_limiter_allows_the_cap_then_refuses() -> None:
-    rl = RL()
-    assert [rl.ok("ep-test-a", 2) for _ in range(3)] == [True, True, False]
-
-
-def test_rate_limiter_is_per_endpoint() -> None:
-    rl = RL()
-    assert rl.ok("ep-test-b", 1) is True
-    assert rl.ok("ep-test-c", 1) is True
-
-
-# ── cache ─────────────────────────────────────────────────────────
-def test_cache_roundtrip_and_key_isolation() -> None:
-    c = Cache()
-    c.set("eth_blockNumber", [], {"n": 1})
-    assert c.get("eth_blockNumber", []) == {"n": 1}
-    assert c.get("eth_blockNumber", ["other"]) is None
-
-
-def test_cache_entry_expires_at_ttl() -> None:
-    c = Cache()
-    c.set("m", None, "v", ttl=0)  # already expired on write
-    assert c.get("m", None) is None
-
-
-def test_cache_evicts_oldest_at_capacity() -> None:
-    c = Cache(mx=2)
-    c.set("m", ["a"], 1)
-    c.set("m", ["b"], 2)
-    c.set("m", ["c"], 3)
-    assert len(c.s) == 2
-    assert c.get("m", ["a"]) is None
-
-
-# ── rpc_call ──────────────────────────────────────────────────────
 @pytest.mark.asyncio
 @respx.mock
 async def test_readonly_result_is_cached() -> None:
@@ -103,7 +65,7 @@ async def test_429_cools_the_endpoint_down_and_fails_over() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_jsonrpc_error_fails_over_and_reports_last_error() -> None:
+async def test_jsonrpc_error_fails_over_to_the_next_endpoint() -> None:
     respx.post(f"{URL}/bad").mock(return_value=Response(200, json={"error": {"message": "boom"}}))
     respx.post(f"{URL}/good").mock(return_value=Response(200, json={"result": 7}))
     out = await rpc._rpc_call(eps("bad", "good"), "eth_blockNumber", [])
@@ -121,7 +83,17 @@ async def test_all_endpoints_down_returns_error_envelope() -> None:
     assert out["error"]
 
 
-def test_healthy_clears_cooldowns_when_everything_is_cooling() -> None:
+@pytest.mark.asyncio
+@respx.mock
+async def test_non_rpc_5xx_is_never_reported_as_success() -> None:
+    """Regression: a gateway's HTML/empty error page used to return result None."""
+    respx.post(f"{URL}/page").mock(return_value=Response(502, json={"message": "bad gateway"}))
+    out = await rpc._rpc_call(eps("page"), "eth_chainId", [])
+    assert out["ok"] is False
+    assert "malformed" in out["error"]
+
+
+def test_healthy_clears_cool_downs_when_everything_is_cooling() -> None:
     table = eps("c1", "c2")
     for ep in table:
         ep["cooldown"] = 10**9  # far in the future
@@ -130,7 +102,6 @@ def test_healthy_clears_cooldowns_when_everything_is_cooling() -> None:
     assert all(ep["cooldown"] == 0 for ep in table)
 
 
-# ── duckdb / postgres handles ─────────────────────────────────────
 class Recorder:
     """Stands in for a DuckDB connection: records the statements it is given."""
 

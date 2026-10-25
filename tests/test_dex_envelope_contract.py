@@ -1,6 +1,6 @@
-"""The DEX envelope contract, proven for EVERY DexScreener/GeckoTerminal tool.
+"""The DEX envelope contract, proven per tool from recorded fixtures.
 
-Per tool (7 of them, driven by recorded fixtures replayed with respx):
+Three guarantees for every DexScreener/GeckoTerminal tool:
 
   1. Success returns exactly {data, source, fetched_at, stale, age_s} with
      `data` present (never None) and `stale` False — no empty success.
@@ -9,123 +9,24 @@ Per tool (7 of them, driven by recorded fixtures replayed with respx):
   3. An upstream that legitimately returns zero rows is a success, not a
      failure.
 
-Then, at the fetch layer (deterministic `Rig` clock/sleeper, no network):
-fresh-hit TTL, refetch after TTL, stale serving inside the per-source window,
-expiry of that window, and the reported age.
-
-No network and no patching: fixtures + the injected seam only.
+Fixtures only: recorded payloads replayed with respx; no network, no patching.
+Cache/stale behaviour: test_dex_cache_windows.py.
 """
 
 from __future__ import annotations
 
 import json
-import pathlib
-from typing import Callable
 
 import httpx
 import pytest
 import respx
-from dex_harness import Call, Client, Clock, Resp, Sleeps, rig
+from dex_cases import CASES, ENVELOPE, FIX, Case
 
-import data_mcp_dex as dex
 import data_mcp_dex_core as core
-import data_mcp_dex_http as dex_http
-import data_mcp_gecko as gecko
-
-FIX = pathlib.Path(__file__).parent / "fixtures" / "dex"
-DS = "https://api.dexscreener.com"
-GT = "https://api.geckoterminal.com/api/v2"
-SOL = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
-EVM = "0xAbC0000000000000000000000000000000000001"
-POOL = "7Yk7UAsViEvP5wkyfapAFS7KySmCnJtpvamxmCMKiavU"
-
-ENVELOPE = {"data", "source", "fetched_at", "stale", "age_s"}
 
 
 def fx(name: str) -> object:
     return json.loads((FIX / name).read_text())
-
-
-class Case:
-    """One tool, its fixture-backed call, and the upstream URL it hits."""
-
-    def __init__(
-        self,
-        name: str,
-        call: Callable[[], object],
-        prefix: str,
-        fixture: str,
-        source: str,
-        empty: object,
-    ) -> None:
-        self.name, self.call, self.prefix, self.fixture, self.source = (
-            name,
-            call,
-            prefix,
-            fixture,
-            source,
-        )
-        self.empty = empty
-
-
-CASES = [
-    Case(
-        "dex_search",
-        lambda: dex.dex_search("bonk", limit=2),
-        f"{DS}/latest/dex/search",
-        "dexscreener_search.json",
-        "dexscreener",
-        {"pairs": []},
-    ),
-    Case(
-        "dex_pairs",
-        lambda: dex.dex_pairs("base", EVM),
-        f"{DS}/latest/dex/pairs/base/",
-        "dexscreener_pairs.json",
-        "dexscreener",
-        {"pairs": []},
-    ),
-    Case(
-        "dex_token",
-        lambda: dex.dex_token(SOL, chain="solana"),
-        f"{DS}/latest/dex/tokens/",
-        "dexscreener_token.json",
-        "dexscreener",
-        {"pairs": []},
-    ),
-    Case(
-        "dex_boosts",
-        lambda: dex.dex_boosts("latest", limit=2),
-        f"{DS}/token-boosts/latest/v1",
-        "dexscreener_boosts_latest.json",
-        "dexscreener",
-        [],
-    ),
-    Case(
-        "dex_profiles",
-        lambda: dex.dex_profiles(limit=2),
-        f"{DS}/token-profiles/latest/v1",
-        "dexscreener_profiles.json",
-        "dexscreener",
-        [],
-    ),
-    Case(
-        "dex_pools",
-        lambda: gecko.dex_pools("solana", limit=2),
-        f"{GT}/networks/solana/pools",
-        "geckoterminal_pools.json",
-        "geckoterminal",
-        {"data": [], "meta": {}},
-    ),
-    Case(
-        "dex_ohlcv",
-        lambda: gecko.dex_ohlcv("solana", POOL, resolution="hour", limit=5),
-        f"{GT}/networks/solana/pools/{POOL}/ohlcv/hour",
-        "geckoterminal_ohlcv.json",
-        "geckoterminal",
-        {"data": {"attributes": {"ohlcv_list": []}}, "meta": {}},
-    ),
-]
 
 
 @pytest.fixture(autouse=True)
@@ -175,85 +76,3 @@ async def test_empty_upstream_payload_is_a_success(case: Case) -> None:
     env = await case.call()
     assert env["stale"] is False
     assert env["data"] is not None
-
-
-# ── fetch layer: TTL, stale window, pacing ────────────────────────
-# Per-source contract from data_mcp_dex_core.SOURCES.
-WINDOWS = [
-    ("dexscreener", 30, 300),  # ttl, stale_ttl
-    ("geckoterminal", 60, 900),
-]
-
-
-@pytest.fixture(params=WINDOWS, ids=[w[0] for w in WINDOWS])
-def source_window(request) -> tuple[str, int, int]:
-    return request.param
-
-
-def _call(source: str) -> Call:
-    path = "/latest/dex/search" if source == "dexscreener" else "/networks/solana/pools"
-    return Call(source, path)
-
-
-def _body(source: str) -> dict:
-    return {"pairs": []} if source == "dexscreener" else {"data": [], "meta": {}}
-
-
-@pytest.mark.asyncio
-async def test_fresh_hit_within_ttl_skips_upstream(source_window) -> None:
-    source, ttl, _ = source_window
-    clock, sleeps = Clock(), Sleeps()
-    client = Client(Resp(200, _body(source)))
-    await dex_http.fetch(_call(source), rig=rig(client, clock, sleeps))
-    clock.tick(ttl - 1)
-    env = await dex_http.fetch(_call(source), rig=rig(client, clock, sleeps))
-    assert len(client.calls) == 1
-    assert env["stale"] is False
-    assert env["age_s"] == ttl - 1
-
-
-@pytest.mark.asyncio
-async def test_refetch_after_ttl(source_window) -> None:
-    source, ttl, _ = source_window
-    clock, sleeps = Clock(), Sleeps()
-    client = Client(Resp(200, _body(source)))
-    await dex_http.fetch(_call(source), rig=rig(client, clock, sleeps))
-    clock.tick(ttl + 1)
-    await dex_http.fetch(_call(source), rig=rig(client, clock, sleeps))
-    assert len(client.calls) == 2
-
-
-@pytest.mark.asyncio
-async def test_stale_served_inside_the_stale_window(source_window) -> None:
-    source, ttl, stale_ttl = source_window
-    clock, sleeps = Clock(), Sleeps()
-    ok = Client(Resp(200, _body(source)))
-    first = await dex_http.fetch(_call(source), rig=rig(ok, clock, sleeps))
-    clock.tick(ttl + 10)
-    env = await dex_http.fetch(_call(source), rig=rig(Client(Resp(503, None)), clock, sleeps))
-    assert env["stale"] is True
-    assert env["data"] == first["data"]
-    assert env["fetched_at"] == first["fetched_at"]  # original fetch time kept
-    assert env["age_s"] == ttl + 10
-
-
-@pytest.mark.asyncio
-async def test_stale_window_expiry_raises(source_window) -> None:
-    source, ttl, stale_ttl = source_window
-    clock, sleeps = Clock(), Sleeps()
-    await dex_http.fetch(_call(source), rig=rig(Client(Resp(200, _body(source))), clock, sleeps))
-    clock.tick(stale_ttl + 1)
-    with pytest.raises(core.DataUnavailable):
-        await dex_http.fetch(_call(source), rig=rig(Client(Resp(503, None)), clock, sleeps))
-
-
-@pytest.mark.asyncio
-async def test_geckoterminal_min_interval_paces_calls() -> None:
-    clock, sleeps = Clock(), Sleeps()
-    client = Client(Resp(200, _body("geckoterminal")))
-    for page in (1, 2):  # distinct calls, so the cache cannot answer the second
-        await dex_http.fetch(
-            Call("geckoterminal", "/networks/solana/pools", {"page": page}),
-            rig=rig(client, clock, sleeps),
-        )
-    assert sleeps.waits[0] == 2.0  # SOURCES["geckoterminal"]["min_interval"]
