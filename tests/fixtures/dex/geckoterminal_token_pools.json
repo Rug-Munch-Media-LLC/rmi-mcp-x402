@@ -1,0 +1,190 @@
+{
+	"data": [
+		{
+			"id": "solana_31p1hptjhFo6ZD8oBqkfutNXQKGGPyi7YcEAfsyKW777",
+			"type": "pool",
+			"attributes": {
+				"base_token_price_usd": "0.000003041553518",
+				"base_token_price_native_currency": "0.0000000299494917827603",
+				"quote_token_price_usd": "0.999906358756415403806202770130584668171198168940800044871343738",
+				"quote_token_price_native_currency": "0.0098519141",
+				"base_token_price_quote_token": "0.0000030399668",
+				"quote_token_price_base_token": "328950.960886455",
+				"address": "31p1hptjhFo6ZD8oBqkfutNXQKGGPyi7YcEAfsyKW777",
+				"name": "Bonk / USDC",
+				"pool_created_at": "2025-07-17T15:51:09Z",
+				"token_price_usd": "0.000003041553518",
+				"fdv_usd": "267639427.701705",
+				"market_cap_usd": "267639427.701705",
+				"price_change_percentage": {
+					"m5": "0",
+					"m15": "0",
+					"m30": "-0.001",
+					"h1": "0",
+					"h6": "-3.12",
+					"h24": "-1.98"
+				},
+				"transactions": {
+					"m5": {
+						"buys": 0,
+						"sells": 0,
+						"buyers": 0,
+						"sellers": 0
+					},
+					"m15": {
+						"buys": 0,
+						"sells": 0,
+						"buyers": 0,
+						"sellers": 0
+					},
+					"m30": {
+						"buys": 1,
+						"sells": 22,
+						"buyers": 1,
+						"sellers": 5
+					},
+					"h1": {
+						"buys": 1,
+						"sells": 22,
+						"buyers": 1,
+						"sellers": 5
+					},
+					"h6": {
+						"buys": 310,
+						"sells": 453,
+						"buyers": 161,
+						"sellers": 175
+					},
+					"h24": {
+						"buys": 1620,
+						"sells": 1729,
+						"buyers": 550,
+						"sellers": 569
+					}
+				},
+				"volume_usd": {
+					"m5": "0.0",
+					"m15": "0.0",
+					"m30": "4624.2997099845",
+					"h1": "4624.2997099845",
+					"h6": "77348.9861722112",
+					"h24": "330376.450978517"
+				},
+				"reserve_in_usd": "263738.9129"
+			},
+			"relationships": {
+				"base_token": {
+					"data": {
+						"id": "solana_DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+						"type": "token"
+					}
+				},
+				"quote_token": {
+					"data": {
+						"id": "solana_EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+						"type": "token"
+					}
+				},
+				"dex": {
+					"data": {
+						"id": "meteora",
+						"type": "dex"
+					}
+				}
+			}
+		},
+		{
+			"id": "solana_5zpyutJu9ee6jFymDGoK7F6S5Kczqtc9FomP3ueKuyA9",
+			"type": "pool",
+			"attributes": {
+				"base_token_price_usd": "0.000003036420403",
+				"base_token_price_native_currency": "0.0000000300027647886888",
+				"quote_token_price_usd": "101.242687884351131170724852984",
+				"quote_token_price_native_currency": "1.0",
+				"base_token_price_quote_token": "0.00000003000276479",
+				"quote_token_price_base_token": "33330261.6289884",
+				"address": "5zpyutJu9ee6jFymDGoK7F6S5Kczqtc9FomP3ueKuyA9",
+				"name": "Bonk / SOL",
+				"pool_created_at": "2023-07-05T14:41:09Z",
+				"token_price_usd": "0.000003036420403",
+				"fdv_usd": "267187742.747685",
+				"market_cap_usd": "267187742.747685",
+				"price_change_percentage": {
+					"m5": "-0.35",
+					"m15": "-0.273",
+					"m30": "-0.268",
+					"h1": "-0.55",
+					"h6": "-3.31",
+					"h24": "-1.17"
+				},
+				"transactions": {
+					"m5": {
+						"buys": 2,
+						"sells": 8,
+						"buyers": 2,
+						"sellers": 5
+					},
+					"m15": {
+						"buys": 56,
+						"sells": 18,
+						"buyers": 46,
+						"sellers": 15
+					},
+					"m30": {
+						"buys": 143,
+						"sells": 36,
+						"buyers": 96,
+						"sellers": 25
+					},
+					"h1": {
+						"buys": 258,
+						"sells": 59,
+						"buyers": 160,
+						"sellers": 34
+					},
+					"h6": {
+						"buys": 1951,
+						"sells": 771,
+						"buyers": 845,
+						"sellers": 307
+					},
+					"h24": {
+						"buys": 5997,
+						"sells": 5918,
+						"buyers": 1989,
+						"sellers": 1890
+					}
+				},
+				"volume_usd": {
+					"m5": "285.6356746746",
+					"m15": "1008.971446039",
+					"m30": "2111.168004383",
+					"h1": "3660.5452455375",
+					"h6": "49766.8723246494",
+					"h24": "276240.896037708"
+				},
+				"reserve_in_usd": "306310.4015"
+			},
+			"relationships": {
+				"base_token": {
+					"data": {
+						"id": "solana_DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+						"type": "token"
+					}
+				},
+				"quote_token": {
+					"data": {
+						"id": "solana_So11111111111111111111111111111111111111112",
+						"type": "token"
+					}
+				},
+				"dex": {
+					"data": {
+						"id": "orca",
+						"type": "dex"
+					}
+				}
+			}
+		}
+	]
+}

@@ -1,0 +1,46 @@
+[
+	{
+		"url": "https://dexscreener.com/solana/8rafgyzajpyx96ppl7mxel5dwjbsnbaqjbtfhuxdhvyj",
+		"chainId": "solana",
+		"tokenAddress": "8RAFGyzajpYX96ppL7MXEL5DwjBSnbAqjBTfhUXDhVYj",
+		"description": "Hold $GPT and receive $OpenAI airdrops\n\nplay the AGI ESCAPE and get real SOL rewards",
+		"icon": "9M6HL30W1G_tgQcW",
+		"header": "https://cdn.dexscreener.com/cms/images/gcue40eyHGoqzXAG?width=900&height=300&fit=crop&quality=95&format=auto",
+		"openGraph": "https://cdn.dexscreener.com/token-images/og/solana/8RAFGyzajpYX96ppL7MXEL5DwjBSnbAqjBTfhUXDhVYj?timestamp=1792911600000",
+		"links": [
+			{
+				"url": "https://giantpairoftits.xyz/"
+			},
+			{
+				"type": "twitter",
+				"url": "https://x.com/giantpairoftits"
+			},
+			{
+				"type": "telegram",
+				"url": "https://t.me/giantpairoftits"
+			}
+		],
+		"totalAmount": 10,
+		"amount": 10
+	},
+	{
+		"url": "https://dexscreener.com/bsc/0x4b0da40d7353ee3a25d3bfe1ddb8552ca2ec7777",
+		"chainId": "bsc",
+		"tokenAddress": "0x4b0DA40d7353eE3A25D3BFe1ddb8552Ca2eC7777",
+		"description": "\u57c3\u9686\u7684\u72d7 Marvin the Martian\uff08\u706b\u661f\u4eba\u9a6c\u6587\uff09\u521a\u521a\u88ab\u53d1\u73b0\u4e86\u3002\n\nMartian \u6307\u7684\u662f\u6765\u81ea\u706b\u661f\u7684\u751f\u7269\u3002\n\nMarvin the Martian \u73b0\u5728\u5df2\u4e0e $MARSCOIN \u914d\u5bf9\uff0c\u6301\u6709\u8005\u8fd8\u80fd\u83b7\u5f97\u66f4\u591a $MARSCOIN \u5956\u52b1\u3002",
+		"icon": "9VN0FG2H93kFZuBD",
+		"header": "https://cdn.dexscreener.com/cms/images/RV-dwYOWD44oSqgv?width=900&height=300&fit=crop&quality=95&format=auto",
+		"openGraph": "https://cdn.dexscreener.com/token-images/og/bsc/0x4b0da40d7353ee3a25d3bfe1ddb8552ca2ec7777?timestamp=1792911600000",
+		"links": [
+			{
+				"url": "https://marvinthemartian.vip/"
+			},
+			{
+				"type": "twitter",
+				"url": "https://x.com/marvinonbnb?s=11"
+			}
+		],
+		"totalAmount": 10,
+		"amount": 10
+	}
+]

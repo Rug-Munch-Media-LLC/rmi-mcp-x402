@@ -1,0 +1,33 @@
+[
+	{
+		"url": "https://dexscreener.com/solana/35yjmpjykaoq3dfzfgqpssltugdbiqc1k6wncr4upump",
+		"chainId": "solana",
+		"tokenAddress": "35yjMpJyKAoq3dFzFGqpSsLtUGdBiqC1k6WNcr4upump",
+		"icon": "https://cdn.dexscreener.com/cms/images/5O_DaaoXUptIjK6W?width=64&height=64&fit=crop&quality=95&format=auto",
+		"header": "https://cdn.dexscreener.com/cms/images/_vqMewacE5OTrwM8?width=600&height=200&fit=crop&quality=95&format=auto",
+		"openGraph": "https://cdn.dexscreener.com/token-images/og/solana/35yjMpJyKAoq3dFzFGqpSsLtUGdBiqC1k6WNcr4upump?timestamp=1792911600000",
+		"links": [
+			{
+				"type": "twitter",
+				"url": "https://x.com/BigBootyCoinn"
+			}
+		],
+		"cto": false
+	},
+	{
+		"url": "https://dexscreener.com/solana/27gpe4gyjjpgnvqgyjgfzb2gzvqwk9lek6fncoiystnk",
+		"chainId": "solana",
+		"tokenAddress": "27GPe4GYJJpGNVqgyJgfZB2GZvqwk9LEK6FnCoiYSTNK",
+		"icon": "https://cdn.dexscreener.com/cms/images/Tdsp0XRC7TmIPKLk?width=64&height=64&fit=crop&quality=95&format=auto",
+		"header": "https://cdn.dexscreener.com/cms/images/zYRiH8rNi24lV8iE?width=600&height=200&fit=crop&quality=95&format=auto",
+		"openGraph": "https://cdn.dexscreener.com/token-images/og/solana/27GPe4GYJJpGNVqgyJgfZB2GZvqwk9LEK6FnCoiYSTNK?timestamp=1792911600000",
+		"description": "",
+		"links": [
+			{
+				"type": "twitter",
+				"url": "https://x.com/THETRENCHERYA/status/2114248574611415399"
+			}
+		],
+		"cto": false
+	}
+]
