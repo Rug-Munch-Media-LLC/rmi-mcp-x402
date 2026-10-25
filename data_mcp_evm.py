@@ -11,7 +11,7 @@ import time
 import httpx
 
 from data_mcp_config import EVM_RPC, SOL_RPC
-from data_mcp_infra import _rpc_call
+from data_mcp_rpc import _rpc_call
 from data_mcp_server import mcp
 
 # ═══════════════════════════════════════════════════════════════════

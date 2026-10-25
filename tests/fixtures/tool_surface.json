@@ -1,0 +1,594 @@
+{
+	"dex_boosts": {
+		"description": "DexScreener token boosts (paid promotion signal) \u2014 \"latest\" or \"top\".",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"kind": {
+					"default": "latest",
+					"description": "\"latest\" (most recent) or \"top\" (highest boost totals).",
+					"type": "string"
+				},
+				"limit": {
+					"default": 20,
+					"description": "Max entries returned (1-50, default 20).",
+					"type": "integer"
+				}
+			},
+			"type": "object"
+		}
+	},
+	"dex_ohlcv": {
+		"description": "OHLCV candles for one GeckoTerminal pool.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"before_timestamp": {
+					"default": 0,
+					"description": "Unix seconds; return candles before this time (0 = latest).",
+					"type": "integer"
+				},
+				"limit": {
+					"default": 100,
+					"description": "Max candles (1-1000, default 100).",
+					"type": "integer"
+				},
+				"network": {
+					"description": "Chain name or alias (solana, eth, bsc, base, arbitrum...).",
+					"type": "string"
+				},
+				"pool": {
+					"description": "Pool address (the GeckoTerminal pool/pair id for that network).",
+					"type": "string"
+				},
+				"resolution": {
+					"default": "hour",
+					"description": "\"<timeframe>\" or \"<timeframe>:<aggregate>\" \u2014 timeframe is\nminute/hour/day; aggregates minute 1/5/15, hour 1/4/12, day 1.\nExamples: \"hour\", \"hour:4\", \"minute:15\".",
+					"type": "string"
+				}
+			},
+			"required": ["network", "pool"],
+			"type": "object"
+		}
+	},
+	"dex_pairs": {
+		"description": "Look up one DexScreener pair by chain and pair address.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"chain": {
+					"description": "Chain name or alias (solana, eth, bsc, base, arbitrum, polygon...).",
+					"type": "string"
+				},
+				"pair": {
+					"description": "Pair/pool address on that chain.",
+					"type": "string"
+				}
+			},
+			"required": ["chain", "pair"],
+			"type": "object"
+		}
+	},
+	"dex_pools": {
+		"description": "GeckoTerminal pools: all pools on a network, one token's pools, or a search.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"limit": {
+					"default": 20,
+					"description": "Max pools returned (1-100, default 20).",
+					"type": "integer"
+				},
+				"network": {
+					"default": "solana",
+					"description": "Chain name or alias (solana, eth, bsc, base, arbitrum...).",
+					"type": "string"
+				},
+				"page": {
+					"default": 1,
+					"description": "Page number, 1-based.",
+					"type": "integer"
+				},
+				"query": {
+					"default": "",
+					"description": "Free-text pool search (used only when token is empty).",
+					"type": "string"
+				},
+				"token": {
+					"default": "",
+					"description": "Token address \u2014 returns that token's pools (takes precedence).",
+					"type": "string"
+				}
+			},
+			"type": "object"
+		}
+	},
+	"dex_profiles": {
+		"description": "DexScreener token profiles (team-submitted metadata) \u2014 latest 100.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"limit": {
+					"default": 20,
+					"description": "Max profiles returned (1-50, default 20).",
+					"type": "integer"
+				}
+			},
+			"type": "object"
+		}
+	},
+	"dex_search": {
+		"description": "Search DexScreener for pairs by token symbol, name, or pair address.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"limit": {
+					"default": 20,
+					"description": "Max pairs returned (1-50, default 20).",
+					"type": "integer"
+				},
+				"query": {
+					"description": "Free-text search term (e.g. \"bonk\", \"WIF/SOL\").",
+					"type": "string"
+				}
+			},
+			"required": ["query"],
+			"type": "object"
+		}
+	},
+	"dex_token": {
+		"description": "All DexScreener pairs for one or more token addresses (comma-separated, max 30).",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"address": {
+					"description": "Token address, or comma-separated addresses (max 30).",
+					"type": "string"
+				},
+				"chain": {
+					"default": "",
+					"description": "Optional chain for address normalization/validation.",
+					"type": "string"
+				}
+			},
+			"required": ["address"],
+			"type": "object"
+		}
+	},
+	"evm_blockNumber": {
+		"description": "Get current block number for an EVM chain.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"chain": {
+					"default": "ethereum",
+					"type": "string"
+				}
+			},
+			"type": "object"
+		}
+	},
+	"evm_call": {
+		"description": "Execute a read-only contract call (eth_call). Chain: ethereum, base, arbitrum.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"chain": {
+					"type": "string"
+				},
+				"data": {
+					"type": "string"
+				},
+				"to": {
+					"type": "string"
+				}
+			},
+			"required": ["chain", "to", "data"],
+			"type": "object"
+		}
+	},
+	"evm_getBalance": {
+		"description": "Get ETH/native token balance for an address in wei.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"address": {
+					"type": "string"
+				},
+				"chain": {
+					"type": "string"
+				}
+			},
+			"required": ["chain", "address"],
+			"type": "object"
+		}
+	},
+	"evm_getBlock": {
+		"description": "Get EVM block by number or 'latest'. Chain: ethereum, base, arbitrum.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"block": {
+					"default": "latest",
+					"type": "string"
+				},
+				"chain": {
+					"default": "ethereum",
+					"type": "string"
+				}
+			},
+			"type": "object"
+		}
+	},
+	"evm_getLogs": {
+		"description": "Get event logs for an EVM contract address.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"address": {
+					"type": "string"
+				},
+				"chain": {
+					"type": "string"
+				},
+				"fromBlock": {
+					"default": "0x0",
+					"type": "string"
+				},
+				"toBlock": {
+					"default": "latest",
+					"type": "string"
+				}
+			},
+			"required": ["chain", "address"],
+			"type": "object"
+		}
+	},
+	"evm_getTransaction": {
+		"description": "Get EVM transaction by hash. Chain: ethereum, base, arbitrum.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"chain": {
+					"type": "string"
+				},
+				"tx_hash": {
+					"type": "string"
+				}
+			},
+			"required": ["chain", "tx_hash"],
+			"type": "object"
+		}
+	},
+	"evm_getTransactionReceipt": {
+		"description": "Get EVM transaction receipt (logs, gas used, status).",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"chain": {
+					"type": "string"
+				},
+				"tx_hash": {
+					"type": "string"
+				}
+			},
+			"required": ["chain", "tx_hash"],
+			"type": "object"
+		}
+	},
+	"evm_health": {
+		"description": "Health check for EVM RPC endpoints. Chain: ethereum, base, or arbitrum.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"chain": {
+					"default": "ethereum",
+					"type": "string"
+				}
+			},
+			"type": "object"
+		}
+	},
+	"intel_archive_schema": {
+		"description": "Discover the schema and available data in the Hugging Face Hub archives. Lists all chains, networks, and file counts.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {},
+			"type": "object"
+		}
+	},
+	"intel_duckdb_query": {
+		"description": "Execute a raw DuckDB query against the remote HF Hub archives. Use httpfs to read Parquet/JSONL files over HTTPS without downloading.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"sql": {
+					"type": "string"
+				}
+			},
+			"required": ["sql"],
+			"type": "object"
+		}
+	},
+	"intel_entity_search": {
+		"description": "Search entity profiles in the local Postgres database. Find wallets by entity name, label tag, or type.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"query": {
+					"type": "string"
+				}
+			},
+			"required": ["query"],
+			"type": "object"
+		}
+	},
+	"intel_wallet_profile": {
+		"description": "Comprehensive cross-chain wallet intelligence profile.\nQueries live RPCs (Solana + all EVM chains) + Postgres entity tags + DuckDB historical archives.\nThis is the primary intelligence tool \u2014 combines live data with historical patterns and entity labels.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"address": {
+					"type": "string"
+				}
+			},
+			"required": ["address"],
+			"type": "object"
+		}
+	},
+	"sol_getAccountInfo": {
+		"description": "Solana account info: lamports, owner, executable, data.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"address": {
+					"type": "string"
+				}
+			},
+			"required": ["address"],
+			"type": "object"
+		}
+	},
+	"sol_getBalance": {
+		"description": "SOL balance in lamports for an address.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"address": {
+					"type": "string"
+				}
+			},
+			"required": ["address"],
+			"type": "object"
+		}
+	},
+	"sol_getBlock": {
+		"description": "Solana block details by slot (transactions, blockhash, time).",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"slot": {
+					"type": "integer"
+				}
+			},
+			"required": ["slot"],
+			"type": "object"
+		}
+	},
+	"sol_getEpochInfo": {
+		"description": "Current Solana epoch info: epoch, slot index, absolute slot, block height.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {},
+			"type": "object"
+		}
+	},
+	"sol_getMultipleAccounts": {
+		"description": "Batch account info for up to 100 Solana addresses.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"addresses": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				}
+			},
+			"required": ["addresses"],
+			"type": "object"
+		}
+	},
+	"sol_getProgramAccounts": {
+		"description": "All accounts owned by a Solana program.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"program_id": {
+					"type": "string"
+				}
+			},
+			"required": ["program_id"],
+			"type": "object"
+		}
+	},
+	"sol_getRecentBlockhash": {
+		"description": "Recent Solana blockhash for transaction building.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {},
+			"type": "object"
+		}
+	},
+	"sol_getSignaturesForAddress": {
+		"description": "Recent transaction signatures for a Solana address.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"address": {
+					"type": "string"
+				},
+				"limit": {
+					"default": 20,
+					"type": "integer"
+				}
+			},
+			"required": ["address"],
+			"type": "object"
+		}
+	},
+	"sol_getSlot": {
+		"description": "Current Solana slot number.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {},
+			"type": "object"
+		}
+	},
+	"sol_getTokenAccounts": {
+		"description": "All SPL token accounts owned by an address (mint, amount, decimals).",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"address": {
+					"type": "string"
+				}
+			},
+			"required": ["address"],
+			"type": "object"
+		}
+	},
+	"sol_getTokenLargestAccounts": {
+		"description": "Top 20 token holders for a mint address.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"mint": {
+					"type": "string"
+				}
+			},
+			"required": ["mint"],
+			"type": "object"
+		}
+	},
+	"sol_getTokenPrice": {
+		"description": "Token price from Jupiter API (USD).",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"mint": {
+					"type": "string"
+				}
+			},
+			"required": ["mint"],
+			"type": "object"
+		}
+	},
+	"sol_getTokenSupply": {
+		"description": "Total supply of an SPL token by mint address.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"mint": {
+					"type": "string"
+				}
+			},
+			"required": ["mint"],
+			"type": "object"
+		}
+	},
+	"sol_getTransaction": {
+		"description": "Full Solana transaction details by signature (parsed instructions, accounts, logs).",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"signature": {
+					"type": "string"
+				}
+			},
+			"required": ["signature"],
+			"type": "object"
+		}
+	},
+	"sol_health": {
+		"description": "Health check \u2014 all Solana RPC endpoints, active endpoint, latencies.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {},
+			"type": "object"
+		}
+	},
+	"sol_simulateTransaction": {
+		"description": "Simulate Solana transaction without submitting.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"tx_base64": {
+					"type": "string"
+				}
+			},
+			"required": ["tx_base64"],
+			"type": "object"
+		}
+	},
+	"web_scrape": {
+		"description": "Scrape any webpage via the self-hosted Pry engine and return clean,\nLLM-ready markdown or JSON. Adaptive 12-tier anti-bot escalation handles\nCloudflare/DataDome/Akamai automatically when bypass_cloudflare is set.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"bypass_cloudflare": {
+					"default": true,
+					"description": "Enable adaptive anti-bot escalation (default true).",
+					"type": "boolean"
+				},
+				"formats": {
+					"anyOf": [
+						{
+							"items": {
+								"type": "string"
+							},
+							"type": "array"
+						},
+						{
+							"type": "null"
+						}
+					],
+					"default": null,
+					"description": "Output formats, e.g. [\"markdown\"] or [\"json\"]. Defaults to markdown."
+				},
+				"js_render": {
+					"default": true,
+					"description": "Allow browser-tier rendering for JS-heavy pages (default true).",
+					"type": "boolean"
+				},
+				"url": {
+					"description": "Absolute http(s) URL of the page to scrape.",
+					"type": "string"
+				}
+			},
+			"required": ["url"],
+			"type": "object"
+		}
+	},
+	"xchain_health": {
+		"description": "Health check for ALL chains (Solana + all EVM). Returns per-chain status.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {},
+			"type": "object"
+		}
+	},
+	"xchain_profile": {
+		"description": "Cross-chain wallet profile. Queries Solana + Ethereum + Base + Arbitrum for the SAME address pattern.",
+		"input_schema": {
+			"additionalProperties": false,
+			"properties": {
+				"address": {
+					"type": "string"
+				}
+			},
+			"required": ["address"],
+			"type": "object"
+		}
+	}
+}
