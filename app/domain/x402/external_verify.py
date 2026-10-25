@@ -57,7 +57,7 @@ async def verify_external(
                 # -> require an explicit verification field (isValid/verified).
                 verified = bool(data.get("isValid") or data.get("verified"))
                 if verified:
-                    ok, reason = await self._enforce_replay(tx_hash, network_id)
+                    ok, reason = True, ""  # single-use guard runs once in FacilitatorVerifyMixin.verify
                     if not ok:
                         return {
                             "verified": False,

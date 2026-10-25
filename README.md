@@ -8,9 +8,11 @@ The facilitator is bundled, so it runs as one stack.
 
 Canonical: https://git.rugmunch.io/RugMunchMedia/rmi-mcp-x402
 
-## Quickstart
+## Run it yourself
 
-Python 3.11+, Redis, and a receiving address.
+**Needs:** Python 3.11+, Redis for receipts, and a receiving address you control.
+Settlement needs a funded payer and a reachable RPC.
+**Minimal env:** `X402_WALLET`, `X402_SELF_FACILITATE`, `REDIS_URL`.
 
 ```bash
 git clone https://git.rugmunch.io/RugMunchMedia/rmi-mcp-x402.git
@@ -27,8 +29,33 @@ Compose runs the MCP server and its facilitator together:
 docker compose up -d      # services: rmi, coffer, redis
 ```
 
+Check it works:
+
+```bash
+curl -s localhost:8001/v1/x402/health
+```
+
+That is the bundled facilitator answering, which is the dependency that actually
+fails first. The compose healthcheck probes the same URL, so a healthy container
+and a healthy `curl` mean the same thing.
+
 Read-only tools answer without payment. Anything priced returns a 402 first —
 that is the expected first response, not a failure.
+
+## What it needs
+
+| Component | Role | Where it comes from |
+|---|---|---|
+| `coffer` | the facilitator: challenge, verify, settle, receipts | bundled in this repo and in its compose file |
+| Redis | receipt store; without it replay protection is off | your own, or `redis` in this compose file |
+| A payee address | where payments land; anything else is rejected | you, via `X402_WALLET*` |
+| An RPC endpoint | settlement | your own |
+| `HELIUS_API_KEY` | Solana reads for the chain-data tools | your own key |
+| `PRY_API_URL` | scrape backend for the web tools | separate public repo; those tools are unavailable without it |
+| Postgres | intelligence store for the intel tools | your own |
+
+No tool calls a RugMunch host. Every upstream is a URL you configure, and a tool
+whose upstream is unset fails rather than falling back to ours.
 
 ## What it does
 

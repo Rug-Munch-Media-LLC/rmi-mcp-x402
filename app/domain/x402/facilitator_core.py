@@ -15,6 +15,7 @@ from .facilitator_config import (
     FacilitatorConfig,
 )
 from .pricing import network_family, normalize_network_id
+from .nonce_guard import check_authorization, tx_replay_key
 from .replay import ReplayStore
 from .self_facilitator import SelfFacilitator
 
@@ -122,13 +123,22 @@ class FacilitatorCoreMixin:
         return payment
 
     def _replay_key(self, tx_hash: str, network: str) -> str:
-        return f"x402:replay:{normalize_network_id(network)}:{str(tx_hash).strip().lower()}"
+        return tx_replay_key(network, tx_hash)
 
-    async def _enforce_replay(self, tx_hash: str, network: str) -> tuple[bool, str]:
-        """Burn the tx_hash nonce. Returns (ok, reason); ok=False => replay."""
-        if not tx_hash:
-            return True, ""
-        key = self._replay_key(tx_hash, network)
-        if not await self.replay.check_and_burn(key):
-            return False, "transaction already used (replay)"
-        return True, ""
+    async def _enforce_replay(
+        self, tx_hash: str, network: str, payment_id: str = ""
+    ) -> tuple[bool, str]:
+        """Consume the EIP-3009 nonce, then the tx_hash. (ok, reason).
+
+        Primary guard = authorization nonce keyed on
+        ``(network, asset, from, nonce)``; second guard = settled tx_hash.
+        Fail-closed: a rejected attempt still consumes the nonce.
+        """
+        auth = self._pending_auths.get(payment_id) or {}
+        return await check_authorization(
+            self.replay,
+            auth,
+            tx_hash=tx_hash,
+            network=network,
+            asset=str(auth.get("asset") or ""),
+        )
