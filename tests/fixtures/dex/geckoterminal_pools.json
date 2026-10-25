@@ -1,0 +1,188 @@
+{
+	"data": [
+		{
+			"id": "solana_7Yk7UAsViEvP5wkyfapAFS7KySmCnJtpvamxmCMKiavU",
+			"type": "pool",
+			"attributes": {
+				"base_token_price_usd": "0.0000031370006222439713412704342204652333265545451654380874637448442",
+				"base_token_price_native_currency": "0.0000000332744756996694",
+				"quote_token_price_usd": "101.294136718302369514328072794563257794168563893",
+				"quote_token_price_native_currency": "1.0",
+				"base_token_price_quote_token": "0.0000000332744757",
+				"quote_token_price_base_token": "30053065.5697134",
+				"address": "7Yk7UAsViEvP5wkyfapAFS7KySmCnJtpvamxmCMKiavU",
+				"name": "TRUMP / SOL",
+				"pool_created_at": "2026-10-24T02:52:51Z",
+				"fdv_usd": "3125.8668445257",
+				"market_cap_usd": null,
+				"price_change_percentage": {
+					"m5": "0",
+					"m15": "0",
+					"m30": "0",
+					"h1": "-7.318",
+					"h6": "-7.305",
+					"h24": "-99.635"
+				},
+				"transactions": {
+					"m5": {
+						"buys": 0,
+						"sells": 1,
+						"buyers": 0,
+						"sellers": 1
+					},
+					"m15": {
+						"buys": 0,
+						"sells": 1,
+						"buyers": 0,
+						"sellers": 1
+					},
+					"m30": {
+						"buys": 0,
+						"sells": 1,
+						"buyers": 0,
+						"sellers": 1
+					},
+					"h1": {
+						"buys": 0,
+						"sells": 2,
+						"buyers": 0,
+						"sellers": 2
+					},
+					"h6": {
+						"buys": 10,
+						"sells": 13,
+						"buyers": 9,
+						"sellers": 13
+					},
+					"h24": {
+						"buys": 138307,
+						"sells": 64655,
+						"buyers": 11447,
+						"sellers": 13079
+					}
+				},
+				"volume_usd": {
+					"m5": "0.02148144757",
+					"m15": "0.02148144757",
+					"m30": "0.02148144757",
+					"h1": "204.1064100663",
+					"h6": "442.4052524094",
+					"h24": "2550744.09627509"
+				},
+				"reserve_in_usd": "3917.1859"
+			},
+			"relationships": {
+				"base_token": {
+					"data": {
+						"id": "solana_3YYqFkPaob7SzUCyk59DGVhPZK1LN9odKMJc1uy3pump",
+						"type": "token"
+					}
+				},
+				"quote_token": {
+					"data": {
+						"id": "solana_So11111111111111111111111111111111111111112",
+						"type": "token"
+					}
+				},
+				"dex": {
+					"data": {
+						"id": "pumpswap",
+						"type": "dex"
+					}
+				}
+			}
+		},
+		{
+			"id": "solana_GUWFT7bbLphGrcpAPnnEnBbe1uErv9e6LLC2qPx2wZy1",
+			"type": "pool",
+			"attributes": {
+				"base_token_price_usd": "0.0845825025907216606353504164421589768646668266",
+				"base_token_price_native_currency": "0.000836035503234333",
+				"quote_token_price_usd": "0.999535607811008047569121910895522947527260189",
+				"quote_token_price_native_currency": "0.00987248826905155",
+				"base_token_price_quote_token": "0.08468336254",
+				"quote_token_price_base_token": "11.8086950026",
+				"address": "GUWFT7bbLphGrcpAPnnEnBbe1uErv9e6LLC2qPx2wZy1",
+				"name": "BIRB / USDC",
+				"pool_created_at": "2026-01-27T23:28:53Z",
+				"fdv_usd": "84459687.6095836",
+				"market_cap_usd": "24071032.6659",
+				"price_change_percentage": {
+					"m5": "-0.514",
+					"m15": "-1.641",
+					"m30": "-0.354",
+					"h1": "-2.873",
+					"h6": "13.532",
+					"h24": "-49.904"
+				},
+				"transactions": {
+					"m5": {
+						"buys": 187,
+						"sells": 235,
+						"buyers": 9,
+						"sellers": 9
+					},
+					"m15": {
+						"buys": 583,
+						"sells": 707,
+						"buyers": 19,
+						"sellers": 19
+					},
+					"m30": {
+						"buys": 1249,
+						"sells": 1423,
+						"buyers": 34,
+						"sellers": 40
+					},
+					"h1": {
+						"buys": 2455,
+						"sells": 2879,
+						"buyers": 53,
+						"sellers": 55
+					},
+					"h6": {
+						"buys": 22728,
+						"sells": 23468,
+						"buyers": 285,
+						"sellers": 307
+					},
+					"h24": {
+						"buys": 90484,
+						"sells": 93299,
+						"buyers": 1388,
+						"sellers": 1488
+					}
+				},
+				"volume_usd": {
+					"m5": "23588.8941827163",
+					"m15": "69009.2462965003",
+					"m30": "149698.464826561",
+					"h1": "287360.735053327",
+					"h6": "3754096.90681646",
+					"h24": "20139822.1578137"
+				},
+				"reserve_in_usd": "1483552.7189"
+			},
+			"relationships": {
+				"base_token": {
+					"data": {
+						"id": "solana_G7vQWurMkMMm2dU3iZpXYFTHT9Biio4F4gZCrwFpKNwG",
+						"type": "token"
+					}
+				},
+				"quote_token": {
+					"data": {
+						"id": "solana_EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+						"type": "token"
+					}
+				},
+				"dex": {
+					"data": {
+						"id": "raydium-clmm",
+						"type": "dex"
+					}
+				}
+			}
+		}
+	]
+}

@@ -11,12 +11,17 @@ Thin re-export facade. Implementation lives in focused modules:
   data_mcp_solana  — sol_* tools
   data_mcp_evm     — evm_* + xchain_* tools
   data_mcp_intel   — intel_* tools (Phase 3)
+  data_mcp_dex     — dex_* market tools (DexScreener)
+  data_mcp_dex_*   — DEX contract: envelope, cache, gate, HTTP, chains
+  data_mcp_gecko   — dex_pools / dex_ohlcv (GeckoTerminal)
   data_mcp_web     — web_scrape (Pry engine bridge)
 """
 
 import httpx  # noqa: F401  # re-exported: tests monkeypatch data_mcp.httpx.AsyncClient
 
+import data_mcp_dex as _mod_dex  # noqa: F401
 import data_mcp_evm as _mod_evm  # noqa: F401
+import data_mcp_gecko as _mod_gecko  # noqa: F401
 import data_mcp_intel as _mod_intel  # noqa: F401
 import data_mcp_solana as _mod_solana  # noqa: F401
 import data_mcp_web as _mod_web  # noqa: F401
@@ -37,6 +42,13 @@ from data_mcp_config import (  # noqa: F401
     SOL_RPC,
     SOLANA_RPC,
 )
+from data_mcp_dex import (  # noqa: F401
+    dex_boosts,
+    dex_pairs,
+    dex_profiles,
+    dex_search,
+    dex_token,
+)
 from data_mcp_evm import (  # noqa: F401
     evm_blockNumber,
     evm_call,
@@ -49,6 +61,7 @@ from data_mcp_evm import (  # noqa: F401
     xchain_health,
     xchain_profile,
 )
+from data_mcp_gecko import dex_ohlcv, dex_pools  # noqa: F401
 from data_mcp_infra import (  # noqa: F401
     RL,
     Cache,
@@ -87,7 +100,14 @@ from data_mcp_web import web_scrape  # noqa: F401
 
 # Tool modules register on the shared FastMCP instance at import time;
 # importing them above is what populates `mcp` with all tools.
-_imported_tool_modules = (_mod_evm, _mod_intel, _mod_solana, _mod_web)  # noqa: F841
+_imported_tool_modules = (
+    _mod_dex,
+    _mod_evm,
+    _mod_gecko,
+    _mod_intel,
+    _mod_solana,
+    _mod_web,
+)  # noqa: F841
 
 
 # ── Main ──────────────────────────────────────────────────────────
