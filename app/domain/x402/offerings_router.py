@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from .adapters import HEADER_X_PAYMENT_ID, caller_key_from_request
 from .body import payment_required_body, payment_required_headers
 from .facilitator_client import get_facilitator_client
+from .payment_headers import resolve_payment_proof
 from .offerings import build_cluster_attribution, build_deployer_dossier, build_rug_verdict
 from .store import get_default_store
 
@@ -55,7 +56,7 @@ async def require_verified_payment(request: Request) -> dict[str, Any]:
     2. The id is re-verified against the coffer facilitator over HTTP; any
        failure (down, erroring, refusing) -> 402, never allow-through.
     """
-    payment_id = request.headers.get(HEADER_X_PAYMENT_ID.lower(), "")
+    payment_id = resolve_payment_proof(request.headers)["payment_id"]
     caller_key = caller_key_from_request(request)
     record = get_default_store().get(payment_id) if payment_id else None
     if record is None or (record.get("caller_key") and record.get("caller_key") != caller_key):

@@ -53,16 +53,19 @@ class FacilitatorVerifyMixin:
                 "network": network_id,
             }
 
+        # Single-use guard runs ONCE, before any dispatch: the EIP-3009
+        # nonce (network, asset, from, nonce) plus the tx_hash second guard.
+        ok, reason = await self._enforce_replay(tx_hash, network_id, payment_id)
+        if not ok:
+            return {
+                "verified": False,
+                "reason": reason,
+                "settlement": None,
+                "network": network_id,
+                "http_status": REPLAY_HTTP_STATUS,
+            }
+
         if X402_OFFLINE_MODE:
-            ok, reason = await self._enforce_replay(tx_hash, network_id)
-            if not ok:
-                return {
-                    "verified": False,
-                    "reason": reason,
-                    "settlement": None,
-                    "network": network_id,
-                    "http_status": REPLAY_HTTP_STATUS,
-                }
             return {"verified": True, "reason": "offline_mode", "settlement": None}
 
         # TRON: real TRC-20 USDT verifier wired (ported from the Pry
@@ -81,16 +84,6 @@ class FacilitatorVerifyMixin:
             result = await self._verify_self_hosted(
                 payment_id, tx_hash, network_id, asset, amount_usd
             )
-            if result.get("verified"):
-                ok, reason = await self._enforce_replay(tx_hash, network_id)
-                if not ok:
-                    return {
-                        "verified": False,
-                        "reason": reason,
-                        "settlement": None,
-                        "network": network_id,
-                        "http_status": REPLAY_HTTP_STATUS,
-                    }
             return result
 
         # External facilitator path.

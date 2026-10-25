@@ -24,6 +24,7 @@ from app.mcp.ai_guard import AIGuardWrapper
 from app.mcp.facilitator import MultiChainFacilitator
 from app.mcp.models import X402Bundle
 from app.mcp.tool_manager import X402ToolManager
+from app.domain.x402.payment_headers import resolve_payment_proof
 
 logger = logging.getLogger("x402_mcp_server")
 
@@ -250,7 +251,7 @@ class X402MCPServer:
                         # when coffer itself answers verified:true; an
                         # unreachable facilitator FAILS CLOSED to 402 and never
                         # allows a payment through unverified.
-                        payment_id = request.headers.get(HEADER_X_PAYMENT_ID, "")
+                        payment_id = resolve_payment_proof(request.headers)["payment_id"]
                         caller_key = caller_key_from_request(request)
                         record = get_default_store().get(payment_id) if payment_id else None
                         if record is None or (
