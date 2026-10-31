@@ -79,13 +79,13 @@ See [PRODUCT.md](PRODUCT.md) and [ROADMAP.md](ROADMAP.md).
 **What this is.** MCP server + x402 payment gateway (Coffer).
 **Commands.** `make lint` / `make typecheck` / `make test` / `make check` / `make build`
 
-**Lane rule.** Build, test, lint and install run on Talos (`/srv/work/repos/rmi-mcp-x402`);
+**Lane rule.** Build, test, lint and install run on Talos (`<canonical-checkout>`);
 Cinnabox is terminal-only, and `/home/dev` on Talos is the deploy root, not a code surface.
 
 **MCP first moves.** exact string/file -> `zoekt` (committed) or `rg-search` (uncommitted)
 / symbol or callers -> `serena` / how we build it, verdicts, gotchas -> `context-crypto`
 (`rmi_playbook`, `rmi_gotchas`) / library API -> `context7`.
-**Token.** Forgejo API token: `/srv/secrets/forgejo_api_token` (Talos only, never copy to Cinnabox).
+**Token.** Forgejo API token: `<secrets-path>` (Talos only, never copy to Cinnabox).
 
 **Canonical.** `standards/fleet/LEAD-CONTRACT.md` / runtime copy `/root/.config/opencode/LEAD-CONTRACT.md`.
 <!-- agent-quickstart:end -->

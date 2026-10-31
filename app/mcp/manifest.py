@@ -6,7 +6,7 @@ Defines the schema for versioning, auth, and discovery of every tool in the
 MCP mesh. See DESIGN.md §M2.
 
 Schema:
-    name: "{server}:{tool}" e.g. "rmi-netcup:docker_ps"
+    name: "{server}:{tool}" e.g. "rmi-x402:docker_ps"
     version: "MAJOR.MINOR.PATCH" semantic
     server: server slug
     description: human-readable, max 200 chars
@@ -33,7 +33,7 @@ class MCPToolManifest(BaseModel):
         ...,
         pattern=r"^[a-z][a-z0-9-]*:[a-z][a-z0-9_]*$",
         description='Format "{server}:{tool}" — lowercase, hyphens for server, underscores for tool.',
-        examples=["rmi-netcup:docker_ps", "coingecko:simple_price"],
+        examples=["rmi-x402:docker_ps", "coingecko:simple_price"],
     )
     version: str = Field(
         ...,
