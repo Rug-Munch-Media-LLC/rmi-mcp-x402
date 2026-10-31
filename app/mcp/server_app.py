@@ -16,15 +16,14 @@ from fastapi.responses import JSONResponse
 
 from app.domain.x402.facilitator_client import get_facilitator_client
 from app.domain.x402.middleware import (
-    HEADER_X_PAYMENT_ID,
     caller_key_from_request,
     get_default_store,
 )
+from app.domain.x402.payment_headers import resolve_payment_proof
 from app.mcp.ai_guard import AIGuardWrapper
 from app.mcp.facilitator import MultiChainFacilitator
 from app.mcp.models import X402Bundle
 from app.mcp.tool_manager import X402ToolManager
-from app.domain.x402.payment_headers import resolve_payment_proof
 
 logger = logging.getLogger("x402_mcp_server")
 

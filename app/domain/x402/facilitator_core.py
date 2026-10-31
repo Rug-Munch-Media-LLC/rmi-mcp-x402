@@ -14,8 +14,8 @@ from .facilitator_config import (
     X402_WALLET,
     FacilitatorConfig,
 )
-from .pricing import network_family, normalize_network_id
 from .nonce_guard import check_authorization, tx_replay_key
+from .pricing import network_family, normalize_network_id
 from .replay import ReplayStore
 from .self_facilitator import SelfFacilitator
 

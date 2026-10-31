@@ -7,6 +7,7 @@ v2: ``PAYMENT-SIGNATURE`` (base64 JSON PaymentPayload).
 ``X-Payment-ID`` is an optional fleet shortcut: when present it wins and the
 raw payload header is never required (never both).
 """
+
 from __future__ import annotations
 
 import base64

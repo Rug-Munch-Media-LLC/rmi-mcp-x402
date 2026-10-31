@@ -7,6 +7,7 @@ Spec (``exact`` scheme): an authorization is single-use keyed on
 ``validAfter <= now < validBefore``. The tx_hash key is kept as a SECOND
 guard so a settled transaction can never fund a second call.
 """
+
 from __future__ import annotations
 
 import time

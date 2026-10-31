@@ -129,12 +129,9 @@ jobs:
           pytest tests/ -x -q --tb=short \
             --cov=app --cov-report=term --cov-report=xml:coverage.xml \
             --cov-fail-under=30 --ignore-glob='*integration*' 2>&1 || echo "Coverage below threshold (non-blocking)"
-      - name: Upload coverage
-        uses: actions/upload-artifact@v5.0.0
-        if: always()
-        with:
-          name: coverage-report
-          path: coverage.xml
+      # coverage.xml stays on disk: this Forgejo rejects artifact uploads
+      # (upload-artifact@v4+ = GHESNotSupportedError) - the upload step
+      # fails the job and publishes no artifact, so it is not run.
 
   # ── Security (gitleaks) ───────────────────────────────────────
   security:
@@ -177,10 +174,8 @@ jobs:
             --sarif --output=semgrep.sarif \
             app/ && break || { [ "$i" -eq 3 ] && exit 1; echo "semgrep attempt $i failed — retrying"; sleep 15; }
           done
-      - uses: actions/upload-artifact@v5.0.0
-        with:
-          name: semgrep-report
-          path: semgrep.sarif
+      # semgrep.sarif stays on disk (upload-artifact unsupported on this
+      # Forgejo: v4+/v5 raises GHESNotSupportedError and fails the job).
 
   # ── Dependency audit (pip-audit) ──────────────────────────────
   pip-audit:

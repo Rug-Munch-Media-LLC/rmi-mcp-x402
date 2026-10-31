@@ -1,0 +1,21 @@
+{
+	"rules": {
+		"signal-list": 1
+	},
+	"total": 1,
+	"reasons": [
+		{
+			"date": "2026-10-31",
+			"rules": {
+				"signal-list": [0, 1]
+			},
+			"reason": "Legacy findings measured on 2026-10-26 and captured as the shrink-only ceiling so the ratchet measures GROWTH, not history. These six predate this branch and live in files it does not touch (actor_factory/abuse_guard.py, api/databus_common.py, commerce/reconciliation/reporting.py, datasets/sports_data/{arbitrage,exports}.py). No finding is allowlisted beyond today's count; this number may only go down."
+		}
+	],
+	"files": {
+		"app/domain/x402/offerings.py": {
+			"signal-list": 1
+		}
+	},
+	"generated_on": "2026-10-31"
+}
