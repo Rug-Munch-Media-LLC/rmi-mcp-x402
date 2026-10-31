@@ -7,7 +7,7 @@
 # It is a delegator now: Forgejo first, abort on failure, classified mirrors,
 # Radicle/Nostr publication only when the published tip moved, named exit codes.
 set -uo pipefail
-SEAM=/srv/work/repos/fleet-infra/scripts/git/mirror-sync.sh
+SEAM="${FLEET_INFRA_SEAM:-mirror-sync.sh}"
 [ -x "$SEAM" ] || { echo "FATAL: canonical seam missing: $SEAM" >&2; exit 9; }
 root=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "not in a git repo" >&2; exit 2; }
 exec "$SEAM" "$root" "${1:-}"

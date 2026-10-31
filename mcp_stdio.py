@@ -1,4 +1,4 @@
-"""rmi-netcup MCP stdio server — FastMCP wrapper for rmi-mcp-x402 tools.
+"""rmi-x402 MCP stdio server — FastMCP wrapper for rmi-mcp-x402 tools.
 
 Exposes 11 tools from the TOOL_CATALOG in app/mcp/server.py,
 wired to actual implementations in app/domain/x402/tools/.
@@ -17,11 +17,11 @@ from fastmcp import FastMCP
 logging.basicConfig(
     level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(levelname)s %(message)s"
 )
-log = logging.getLogger("rmi-netcup.mcp")
+log = logging.getLogger("rmi-x402.mcp")
 
 # ── FastMCP app ───────────────────────────────────────────────────
 mcp = FastMCP(
-    name="rmi-netcup",
+    name="rmi-x402",
     instructions="Rug Munch Intelligence MCP server — 11 tools for crypto risk, wallet analysis, news, reports, and more.",
 )
 
@@ -279,7 +279,7 @@ async def mcp_discover(include_deprecated: bool = False, category: str | None = 
 
     return {
         "result": {
-            "server": "rmi-netcup",
+            "server": "rmi-x402",
             "server_version": MCP_SERVER_VERSION,
             "protocol_version": MCP_PROTOCOL_VERSION,
             "tool_count": len(tools_out),
