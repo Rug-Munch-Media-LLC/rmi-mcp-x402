@@ -20,6 +20,7 @@ from store.catalog import TOOLS
 from store.catalog_render import catalog_payload
 from store.config import Settings, load_settings
 from store.mcp import handle_rpc
+from store.protocol import SUPPORTED_PROTOCOL_VERSIONS
 from store.store_db import StoreDB
 
 log = logging.getLogger("store.app")
@@ -103,7 +104,7 @@ async def well_known() -> JSONResponse:
             "mcp": {
                 "endpoint": f"{_settings.public_base_url}/mcp",
                 "transport": "http-jsonrpc",
-                "protocolVersion": "2026-07-28",
+                "protocolVersion": SUPPORTED_PROTOCOL_VERSIONS[0],
             },
             "catalog": f"{_settings.public_base_url}/store/catalog",
             "payment": {
