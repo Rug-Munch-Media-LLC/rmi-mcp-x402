@@ -16,9 +16,9 @@ from store.catalog import TOOLS, get_tool
 from store.challenge import encode_challenge
 from store.config import Settings
 from store.gate import authorize
+from store.protocol import negotiate_protocol_version
 from store.store_db import StoreDB
 
-PROTOCOL_VERSION = "2026-07-28"
 PAYMENT_REQUIRED_CODE = -32002
 
 
@@ -125,7 +125,7 @@ async def handle_rpc(
                 "jsonrpc": "2.0",
                 "id": rpc_id,
                 "result": {
-                    "protocolVersion": PROTOCOL_VERSION,
+                    "protocolVersion": negotiate_protocol_version(params),
                     "capabilities": {"tools": {"listChanged": False}},
                     "serverInfo": {"name": "rmi-intelligence-store", "version": "1.0.0"},
                 },
